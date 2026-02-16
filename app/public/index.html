@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dubyDB — Dynamic databases</title>
+  <link rel="icon" type="image/png" href="logo.png" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <button class="logo-toggle" id="btnSidebarToggle" type="button" aria-label="Show or hide sidebar">
+    <img src="logo.png" alt="dubyDB" class="logo-toggle-img" />
+  </button>
+
+  <div class="theme-switcher" id="themeSwitcher" aria-label="Theme selector">
+    <button type="button" class="theme-toggle" id="themeToggle" aria-expanded="false" aria-controls="themeOptions" aria-label="Background theme">
+      <svg class="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 0 0-9 9c0 3.87 2.46 7.17 5.9 8.4.41.15.85-.16.85-.6v-.63a1.87 1.87 0 0 1 1.86-1.87h1.3c3.92 0 7.09-3.17 7.09-7.09A7.91 7.91 0 0 0 12 3Zm-4.5 9.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm3-4a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm4 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm3 4a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></svg>
+    </button>
+    <div class="theme-options" id="themeOptions" aria-hidden="true">
+      <button type="button" class="theme-btn" data-theme-value="white" aria-pressed="false" aria-label="White theme" title="White"></button>
+      <button type="button" class="theme-btn" data-theme-value="dark" aria-pressed="false" aria-label="Dark theme" title="Dark"></button>
+      <button type="button" class="theme-btn" data-theme-value="sepia" aria-pressed="true" aria-label="Sepia theme" title="Sepia"></button>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div class="sidebar-head-spacer" aria-hidden="true"></div>
+        <h1 class="sidebar-app-name">dubyDB</h1>
+        <button class="btn btn-icon" id="btnAppSettings" type="button" aria-label="Global settings" title="Global settings" style="width:32px;height:32px;">
+          <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.16 7.16 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.49-.42h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.84a.5.5 0 0 0 .12.64L4.85 11.06c-.05.31-.08.63-.08.94s.03.63.08.94L2.82 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54c.04.24.25.42.49.42h3.84c.24 0 .45-.18.49-.42l.36-2.54c.58-.22 1.13-.54 1.63-.94l2.39.96c.22.09.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.02-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-search">
+        <input id="databaseSearch" type="text" placeholder="Search database..." />
+      </div>
+      <div id="folderTree" class="folder-tree"></div>
+      <div class="sidebar-foot">
+        <div class="sidebar-foot-actions">
+          <button class="btn" id="btnNewFolder" type="button">
+            <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10 4 12 6h8a2 2 0 0 1 2 2v2H2V6a2 2 0 0 1 2-2h6Zm12 8v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6h20Zm-9 1h-2v2H9v2h2v2h2v-2h2v-2h-2v-2Z"/></svg>
+            <span>New folder</span>
+          </button>
+          <button class="btn btn-primary" id="btnNewDatabase" type="button">
+            <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2c-5.5 0-10 1.8-10 4v12c0 2.2 4.5 4 10 4s10-1.8 10-4V6c0-2.2-4.5-4-10-4Zm0 2c4.9 0 8 .9 8 2s-3.1 2-8 2-8-.9-8-2 3.1-2 8-2Zm0 7c-4.9 0-8-.9-8-2v3c0 1.1 3.1 2 8 2s8-.9 8-2V9c0 1.1-3.1 2-8 2Zm0 5c-4.9 0-8-.9-8-2v3c0 1.1 3.1 2 8 2s8-.9 8-2v-3c0 1.1-3.1 2-8 2Zm1-5h-2V9H9V7h2V5h2v2h2v2h-2v2Z"/></svg>
+            <span>New database</span>
+          </button>
+        </div>
+        <div class="sidebar-foot-actions sidebar-foot-actions-bottom">
+          <button class="btn" id="btnImportCsv" type="button"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 20h14v-2H5v2Zm7-16 5 5h-3v5h-4V9H7l5-5Z"/></svg><span>Import CSV</span></button>
+          <button class="btn" id="btnRestoreDb" type="button"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z"/></svg><span>Restore backup</span></button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main" id="mainContent">
+      <section class="empty-state" id="homeState">
+        <h2>Select or create a database</h2>
+        <p>Organize your databases in folders and configure properties, relations, views and dynamic analysis.</p>
+      </section>
+
+      <section class="database-shell hidden" id="databaseState">
+        <header class="db-header" id="dbHeader">
+          <div class="db-header-cover" id="dbHeaderCover"></div>
+          <div class="db-header-content">
+            <div class="db-title-row">
+              <h2 id="dbTitle">Database</h2>
+              <button class="btn btn-icon" id="btnEditDbTitle" type="button" aria-label="Edit title" title="Edit title">
+                <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.06 9.02 15.48 10.44 5.75 20.17H4.33V18.75l9.73-9.73ZM17.66 3c-.37 0-.73.15-1 .41l-1.83 1.83 2.83 2.83 1.83-1.83a1.41 1.41 0 0 0 0-2L18.66 3.4c-.27-.26-.63-.4-1-.4Z"/></svg>
+              </button>
+            </div>
+            <p id="dbSubtitle">0 records</p>
+            <div class="db-actions">
+              <button class="btn" id="btnUploadHeader">Cover</button>
+              <div class="db-actions-center">
+                <button class="btn btn-property" id="btnNewProperty"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h10v2H4V6Zm0 5h10v2H4v-2Zm0 5h7v2H4v-2Zm12-7V6h2v3h3v2h-3v3h-2v-3h-3V9h3Z"/></svg><span>+ Property</span></button>
+                <button class="btn btn-view" id="btnNewView"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 4h18v12H3V4Zm2 2v8h6V6H5Zm8 0v3h6V6h-6Zm0 5v3h6v-3h-6ZM8 20v-3H6v3H3v2h3v3h2v-3h3v-2H8Z"/></svg><span>+ View</span></button>
+                <button class="btn btn-record" id="btnNewRecord"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 3h10l4 4v14H5V3Zm9 1.5V8h3.5L14 4.5ZM11 11H9v3H6v2h3v3h2v-3h3v-2h-3v-3Z"/></svg><span>+ Record</span></button>
+              </div>
+              <div class="db-actions-right">
+                <button class="btn" id="btnExportDb"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 20h14v-2H5v2Zm7-16v5h3l-5 5-5-5h3V4h4Z"/></svg><span>Export</span></button>
+                <button class="btn" id="btnSettings"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.48a.5.5 0 0 0 .12.64L4.86 10.7a7.93 7.93 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .49.42h3.8a.5.5 0 0 0 .49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg><span>Settings</span></button>
+              </div>
+              <input type="file" id="headerInput" accept="image/*" hidden />
+            </div>
+          </div>
+        </header>
+
+        <div class="toolbar">
+          <input id="recordSearch" type="text" placeholder="Search records..." />
+          <div class="toolbar-actions">
+            <button class="btn btn-icon" id="btnAdvancedFilter" type="button" aria-label="Filters" title="Advanced filters">
+              <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h18v2l-7 7v5l-4 2v-7L3 7V5Z"/></svg>
+            </button>
+            <button class="btn btn-icon" id="btnAdvancedSort" type="button" aria-label="Sorting" title="Advanced sorting">
+              <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4h2v12h3l-4 4-4-4h3V4Zm6 2h8v2h-8V6Zm0 5h6v2h-6v-2Zm0 5h4v2h-4v-2Z"/></svg>
+            </button>
+          </div>
+          <div id="filters" class="filters"></div>
+        </div>
+
+        <div class="view-tabs" id="viewTabs"></div>
+        <div class="view-host" id="viewHost"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="modal" class="modal"></dialog>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

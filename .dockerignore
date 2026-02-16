@@ -1,0 +1,23 @@
+# VCS
+.git
+.gitignore
+
+# Dependencies
+node_modules
+app/node_modules
+
+# Runtime data
+data
+app/data
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs and temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tmp
+temp

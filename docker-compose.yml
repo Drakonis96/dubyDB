@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    ports:
+      - "7192:7192"
+    environment:
+      PORT: 7192
+      DATA_DIR: /data
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+        read_only: false
+        bind:
+          create_host_path: true

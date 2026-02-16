@@ -1,0 +1,30 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+
+# Runtime data and local databases
+data/**
+
+# Keep only placeholder files if needed
+!data/.gitkeep
+!data/uploads/.gitkeep
+!data/tmp_restore/.gitkeep
+
+# VCS and local metadata
+.git
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+
+# Local artifacts
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.zip
+*.bak
