@@ -1714,6 +1714,28 @@ label {
 
 .config-row:last-child { border-bottom: none; }
 
+.api-tutorial-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.api-tutorial-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  min-height: 220px;
+  resize: vertical;
+}
+
+.api-tutorial-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .csv-import-map {
   border: 1px solid var(--border);
   border-radius: var(--radius);

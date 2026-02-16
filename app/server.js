@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS folders (
 CREATE TABLE IF NOT EXISTS databases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  api_code TEXT,
   folder_id INTEGER,
   header_image TEXT,
   header_gradient TEXT NOT NULL,
@@ -182,12 +183,67 @@ function ensureViewsPositionColumn() {
 
 ensureViewsPositionColumn();
 
+function normalizeDatabaseCode(input) {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, 40);
+}
+
+function generateDatabaseCode() {
+  return `db_${crypto.randomBytes(5).toString('hex')}`;
+}
+
+function generateUniqueDatabaseCode() {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const candidate = normalizeDatabaseCode(generateDatabaseCode());
+    if (!candidate) continue;
+    const exists = db.prepare('SELECT id FROM databases WHERE api_code = ?').get(candidate);
+    if (!exists) return candidate;
+  }
+  return normalizeDatabaseCode(`db_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`);
+}
+
+function ensureDatabaseApiCodeColumn() {
+  const columns = db.prepare('PRAGMA table_info(databases)').all();
+  const hasApiCode = columns.some(column => column.name === 'api_code');
+  if (!hasApiCode) {
+    db.exec('ALTER TABLE databases ADD COLUMN api_code TEXT');
+  }
+
+  const rows = db.prepare('SELECT id, api_code FROM databases ORDER BY id ASC').all();
+  const seen = new Set();
+  const updateStmt = db.prepare('UPDATE databases SET api_code = ? WHERE id = ?');
+  const tx = db.transaction(() => {
+    rows.forEach(row => {
+      let code = normalizeDatabaseCode(row.api_code || '');
+      if (!code || seen.has(code)) {
+        code = generateUniqueDatabaseCode();
+      }
+      seen.add(code);
+      if (String(row.api_code || '') !== code) {
+        updateStmt.run(code, row.id);
+      }
+    });
+  });
+  tx();
+
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_databases_api_code ON databases(api_code)');
+}
+
+ensureDatabaseApiCodeColumn();
+
 const upload = multer({
   storage: multer.diskStorage({
     destination(req, _file, cb) {
       const recordId = Number(req.params.recordId || 0);
       const propertyId = Number(req.params.propertyId || 0);
-      const dbId = Number(req.params.id || 0);
+      const dbId = resolveDatabaseIdFromIdentifier(req.params.id);
       const effectiveDbId = dbId || getRecordById(recordId)?.database_id;
       const dir = path.join(UPLOADS_DIR, `db_${effectiveDbId || 'x'}`, `record_${recordId || 'x'}`, `property_${propertyId || 'x'}`);
       fs.mkdirSync(dir, { recursive: true });
@@ -643,10 +699,32 @@ function listViews(databaseId) {
 
 function getDatabase(databaseId) {
   return db.prepare(`
-    SELECT id, name, folder_id, header_image, header_gradient, created_at, updated_at, next_auto_id
+    SELECT id, name, api_code, folder_id, header_image, header_gradient, created_at, updated_at, next_auto_id
     FROM databases
     WHERE id = ?
   `).get(databaseId);
+}
+
+function getDatabaseByCode(databaseCode) {
+  const code = normalizeDatabaseCode(databaseCode);
+  if (!code) return null;
+  return db.prepare(`
+    SELECT id, name, api_code, folder_id, header_image, header_gradient, created_at, updated_at, next_auto_id
+    FROM databases
+    WHERE api_code = ?
+  `).get(code);
+}
+
+function resolveDatabaseRowIdentifier(identifier) {
+  const raw = String(identifier || '').trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return getDatabase(Number(raw));
+  return getDatabaseByCode(raw);
+}
+
+function resolveDatabaseIdFromIdentifier(identifier) {
+  const row = resolveDatabaseRowIdentifier(identifier);
+  return row ? Number(row.id) : 0;
 }
 
 function getRecordById(recordId) {
@@ -1115,11 +1193,12 @@ function getPropertyOptions(databaseId, property) {
 
 const createDatabaseTx = db.transaction((name, folderId) => {
   const ts = nowIso();
+  const apiCode = generateUniqueDatabaseCode();
   const insertDb = db.prepare(`
-    INSERT INTO databases(name, folder_id, header_gradient, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?)
+    INSERT INTO databases(name, api_code, folder_id, header_gradient, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?)
   `);
-  const result = insertDb.run(name, folderId || null, randomGradient(), ts, ts);
+  const result = insertDb.run(name, apiCode, folderId || null, randomGradient(), ts, ts);
   const databaseId = Number(result.lastInsertRowid);
 
   const insertProperty = db.prepare(`
@@ -1165,7 +1244,7 @@ function wouldCreateFolderCycle(folderId, nextParentId) {
 app.get('/api/bootstrap', (_req, res) => {
   const folders = db.prepare('SELECT id, name, parent_id, created_at FROM folders ORDER BY name COLLATE NOCASE ASC').all();
   const databases = db.prepare(`
-    SELECT d.id, d.name, d.folder_id, d.header_image, d.header_gradient, d.created_at, d.updated_at,
+    SELECT d.id, d.name, d.api_code, d.folder_id, d.header_image, d.header_gradient, d.created_at, d.updated_at,
       COUNT(r.id) AS record_count
     FROM databases d
     LEFT JOIN records r ON r.database_id = d.id
@@ -1394,7 +1473,7 @@ app.get('/api/databases', (req, res) => {
   const folderId = req.query.folderId ? Number(req.query.folderId) : null;
 
   const rows = db.prepare(`
-    SELECT d.id, d.name, d.folder_id, d.header_image, d.header_gradient, d.created_at, d.updated_at,
+    SELECT d.id, d.name, d.api_code, d.folder_id, d.header_image, d.header_gradient, d.created_at, d.updated_at,
       COUNT(r.id) AS record_count
     FROM databases d
     LEFT JOIN records r ON r.database_id = d.id
@@ -1422,10 +1501,16 @@ app.post('/api/databases', (req, res) => {
   res.status(201).json({ id: databaseId });
 });
 
+app.get('/api/databases/resolve/:code', (req, res) => {
+  const database = getDatabaseByCode(req.params.code);
+  if (!database) return res.status(404).json({ error: 'Código de base de datos no encontrado' });
+  return res.json({ id: Number(database.id), name: database.name, code: database.api_code });
+});
+
 app.get('/api/databases/:id', (req, res) => {
-  const databaseId = Number(req.params.id);
-  const data = getDatabase(databaseId);
+  const data = resolveDatabaseRowIdentifier(req.params.id);
   if (!data) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(data.id);
 
   const properties = listProperties(databaseId);
   const views = listViews(databaseId);
@@ -1440,9 +1525,9 @@ app.get('/api/databases/:id', (req, res) => {
 });
 
 app.put('/api/databases/:id/settings', (req, res) => {
-  const databaseId = Number(req.params.id);
-  const dbRow = getDatabase(databaseId);
+  const dbRow = resolveDatabaseRowIdentifier(req.params.id);
   if (!dbRow) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(dbRow.id);
 
   const payload = req.body || {};
   const name = payload.name ? String(payload.name).trim() : dbRow.name;
@@ -1483,9 +1568,9 @@ app.put('/api/databases/:id/settings', (req, res) => {
 });
 
 app.post('/api/databases/:id/header-image', upload.single('image'), (req, res) => {
-  const databaseId = Number(req.params.id);
-  const dbRow = getDatabase(databaseId);
+  const dbRow = resolveDatabaseRowIdentifier(req.params.id);
   if (!dbRow) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(dbRow.id);
   if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
 
   const relativePath = path.relative(UPLOADS_DIR, req.file.path).replace(/\\/g, '/');
@@ -1494,9 +1579,9 @@ app.post('/api/databases/:id/header-image', upload.single('image'), (req, res) =
 });
 
 app.delete('/api/databases/:id/header-image', (req, res) => {
-  const databaseId = Number(req.params.id);
-  const dbRow = getDatabase(databaseId);
+  const dbRow = resolveDatabaseRowIdentifier(req.params.id);
   if (!dbRow) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(dbRow.id);
 
   if (dbRow.header_image) {
     const abs = path.join(UPLOADS_DIR, dbRow.header_image);
@@ -1508,9 +1593,9 @@ app.delete('/api/databases/:id/header-image', (req, res) => {
 });
 
 app.delete('/api/databases/:id', (req, res) => {
-  const databaseId = Number(req.params.id);
-  const row = getDatabase(databaseId);
+  const row = resolveDatabaseRowIdentifier(req.params.id);
   if (!row) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(row.id);
 
   db.prepare('DELETE FROM databases WHERE id = ?').run(databaseId);
   const dir = path.join(UPLOADS_DIR, `db_${databaseId}`);
@@ -1520,7 +1605,9 @@ app.delete('/api/databases/:id', (req, res) => {
 });
 
 app.post('/api/databases/:id/properties', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const body = req.body || {};
@@ -1650,7 +1737,9 @@ app.delete('/api/properties/:id', (req, res) => {
 });
 
 app.post('/api/databases/:id/views', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const body = req.body || {};
@@ -1703,7 +1792,9 @@ app.delete('/api/views/:id', (req, res) => {
 });
 
 app.put('/api/databases/:id/views/order', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const payload = req.body || {};
@@ -1734,7 +1825,9 @@ app.put('/api/databases/:id/views/order', (req, res) => {
 });
 
 app.put('/api/databases/:id/properties/order', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const payload = req.body || {};
@@ -1769,7 +1862,9 @@ app.put('/api/databases/:id/properties/order', (req, res) => {
 });
 
 app.get('/api/databases/:id/filter-options', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const properties = listProperties(databaseId);
@@ -1782,7 +1877,9 @@ app.get('/api/databases/:id/filter-options', (req, res) => {
 });
 
 app.get('/api/databases/:id/record-options', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const term = String(req.query.search || '').toLowerCase().trim();
@@ -1856,7 +1953,9 @@ app.get('/api/properties/:id/options', (req, res) => {
 });
 
 app.get('/api/databases/:id/records', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const page = Math.max(1, Number(req.query.page || 1));
@@ -1927,7 +2026,9 @@ app.get('/api/databases/:id/records', (req, res) => {
 });
 
 app.post('/api/databases/:id/records', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const body = req.body || {};
@@ -2256,7 +2357,9 @@ app.delete('/api/attachments-by-url', (req, res) => {
 });
 
 app.post('/api/databases/:id/analysis', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const body = req.body || {};
@@ -2273,7 +2376,9 @@ app.get('/api/tag-colors', (_req, res) => {
 });
 
 app.get('/api/databases/:id/backup', (req, res) => {
-  const databaseId = Number(req.params.id);
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(database.id);
   const includeFiles = req.query.includeFiles === '0' ? '0' : '1';
   const mode = req.query.mode ? String(req.query.mode) : 'full';
   const filters = req.query.filters ? `&filters=${encodeURIComponent(String(req.query.filters))}` : '';
@@ -2351,13 +2456,41 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
 
       const escapedPath = sourceDbPath.replace(/'/g, "''");
       db.exec(`ATTACH DATABASE '${escapedPath}' AS restore_src`);
+
+      const sourceDatabasesCols = new Set(db.prepare('PRAGMA restore_src.table_info(databases)').all().map(column => column.name));
+      const sourceViewsCols = new Set(db.prepare('PRAGMA restore_src.table_info(database_views)').all().map(column => column.name));
+
+      const insertDatabasesSql = sourceDatabasesCols.has('api_code')
+        ? `
+        INSERT INTO databases(id, name, api_code, folder_id, header_image, header_gradient, next_auto_id, created_at, updated_at)
+        SELECT id, name, api_code, folder_id, header_image, header_gradient, next_auto_id, created_at, updated_at
+        FROM restore_src.databases;
+      `
+        : `
+        INSERT INTO databases(id, name, folder_id, header_image, header_gradient, next_auto_id, created_at, updated_at)
+        SELECT id, name, folder_id, header_image, header_gradient, next_auto_id, created_at, updated_at
+        FROM restore_src.databases;
+      `;
+
+      const insertViewsSql = sourceViewsCols.has('position')
+        ? `
+        INSERT INTO database_views(id, database_id, name, type, position, config_json, created_at)
+        SELECT id, database_id, name, type, position, config_json, created_at
+        FROM restore_src.database_views;
+      `
+        : `
+        INSERT INTO database_views(id, database_id, name, type, position, config_json, created_at)
+        SELECT id, database_id, name, type, 0, config_json, created_at
+        FROM restore_src.database_views;
+      `;
+
       db.exec(`
         INSERT INTO folders SELECT * FROM restore_src.folders;
-        INSERT INTO databases SELECT * FROM restore_src.databases;
+        ${insertDatabasesSql}
         INSERT INTO properties SELECT * FROM restore_src.properties;
         INSERT INTO records SELECT * FROM restore_src.records;
         INSERT INTO record_values SELECT * FROM restore_src.record_values;
-        INSERT INTO database_views SELECT * FROM restore_src.database_views;
+        ${insertViewsSql}
         INSERT INTO attachments SELECT * FROM restore_src.attachments;
         INSERT INTO app_settings SELECT * FROM restore_src.app_settings;
         INSERT INTO webhook_deliveries SELECT * FROM restore_src.webhook_deliveries;
@@ -2369,6 +2502,7 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
     });
 
     replaceAllDataTx();
+    ensureDatabaseApiCodeColumn();
 
     fs.rmSync(UPLOADS_DIR, { recursive: true, force: true });
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -2393,9 +2527,9 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
 
 /* ── Export database as JSON/ZIP ── */
 app.get('/api/databases/:id/export', (req, res) => {
-  const databaseId = Number(req.params.id);
-  const dbRow = getDatabase(databaseId);
+  const dbRow = resolveDatabaseRowIdentifier(req.params.id);
   if (!dbRow) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(dbRow.id);
 
   const includeFiles = req.query.includeFiles === '1';
   const mode = req.query.mode || 'full'; // 'full' | 'view'
@@ -2558,10 +2692,11 @@ app.post('/api/restore', restoreUpload.single('backup'), async (req, res) => {
     const srcDb = payload.database;
 
     const dbResult = db.prepare(`
-      INSERT INTO databases(name, folder_id, header_image, header_gradient, next_auto_id, created_at, updated_at)
-      VALUES(?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO databases(name, api_code, folder_id, header_image, header_gradient, next_auto_id, created_at, updated_at)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       srcDb.name + ' (restaurada)',
+      generateUniqueDatabaseCode(),
       null,
       srcDb.header_image || null,
       srcDb.header_gradient || randomGradient(),

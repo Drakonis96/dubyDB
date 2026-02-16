@@ -41,6 +41,7 @@ With dubyDB you can:
 7. [Danger Zone (Full Wipe)](#danger-zone-full-wipe)
 8. [Troubleshooting](#troubleshooting)
 9. [API keys](#api-keys)
+10. [API integration quick guide](#api-integration-quick-guide)
 
 ---
 
@@ -188,6 +189,45 @@ Recommended usage:
 - Create one key per external integration.
 - Store each key in a secure secrets manager.
 - Revoke keys immediately when no longer needed.
+
+## API integration quick guide
+
+You can now identify each database with an `api_code` and resolve its numeric ID at runtime.
+
+### Resolve database ID by code
+
+- `GET /api/databases/resolve/:code`
+- Example response:
+
+```json
+{
+  "id": 3,
+  "name": "Clientes",
+  "code": "db_a1b2c3d4e5"
+}
+```
+
+### Main endpoints
+
+These routes accept either the numeric ID or the database code in `:id`:
+
+- `GET /api/databases/:id`
+- `GET /api/databases/:id/records`
+- `POST /api/databases/:id/records`
+- `POST /api/databases/:id/properties`
+- `POST /api/databases/:id/analysis`
+- `GET /api/databases/:id/export`
+
+### Upload files to a concrete record
+
+- `POST /api/records/:recordId/attachments/:propertyId`
+- Content type: `multipart/form-data`
+- Form field name: `file`
+
+### Auth headers (when API key is required)
+
+- `x-api-key: duby_xxx`
+- or `Authorization: Bearer duby_xxx`
 
 ---
 

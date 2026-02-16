@@ -371,6 +371,69 @@ function confirmDeleteAttachment(url) {
   });
 }
 
+async function copyTextToClipboard(text) {
+  const value = String(text ?? '');
+  if (!value) return false;
+
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (_error) {
+      // fallback below
+    }
+  }
+
+  const temp = document.createElement('textarea');
+  temp.value = value;
+  temp.setAttribute('readonly', 'readonly');
+  temp.style.position = 'fixed';
+  temp.style.opacity = '0';
+  temp.style.pointerEvents = 'none';
+  document.body.appendChild(temp);
+  temp.focus();
+  temp.select();
+
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (_error) {
+    copied = false;
+  }
+
+  temp.remove();
+  return copied;
+}
+
+async function copyWithVisualFeedback(button, text, labels = {}) {
+  if (!button) return false;
+
+  const idle = labels.idle || button.dataset.copyIdle || button.textContent || tr('Copiar', 'Copy');
+  const copiedLabel = labels.copied || tr('Copiado', 'Copied');
+  const errorLabel = labels.error || tr('No se pudo copiar', 'Could not copy');
+
+  button.dataset.copyIdle = idle;
+  button.disabled = true;
+
+  if (button._copyTimer) {
+    clearTimeout(button._copyTimer);
+    button._copyTimer = null;
+  }
+
+  const ok = await copyTextToClipboard(text);
+  button.classList.toggle('is-saved', ok);
+  button.textContent = ok ? copiedLabel : errorLabel;
+
+  button._copyTimer = setTimeout(() => {
+    button.classList.remove('is-saved');
+    button.textContent = idle;
+    button.disabled = false;
+    button._copyTimer = null;
+  }, 1400);
+
+  return ok;
+}
+
 function normalizeOptionSortMode(value) {
   const mode = String(value || 'manual').toLowerCase();
   if (mode === 'asc' || mode === 'desc') return mode;
@@ -3647,6 +3710,15 @@ function openAppSettingsModal() {
     'Ejemplos: crear registros por tipo de propiedad, buscar por propiedad/nombre, subir archivos a registros concretos.',
     'Examples: create records by property type, search by property/name, upload files to specific records.',
   );
+  const dbCodesTitle = tr('Códigos de bases de datos', 'Database codes');
+  const dbCodesHint = tr(
+    'Usa este código para resolver rápidamente el ID antes de operar con la API.',
+    'Use this code to quickly resolve the ID before running API operations.',
+  );
+  const tutorialToggleText = tr('Mostrar tutorial API', 'Show API tutorial');
+  const tutorialHideText = tr('Ocultar tutorial API', 'Hide API tutorial');
+  const tutorialCopyText = tr('Copiar tutorial', 'Copy tutorial');
+  const tutorialCopiedText = tr('Tutorial copiado', 'Tutorial copied');
 
   openModal({
     title: t('globalSettings'),
@@ -3690,6 +3762,21 @@ function openAppSettingsModal() {
         </label>
         <div class="count">${escapeHtml(tr('Copia y guarda la clave en tu gestor secreto. No se puede volver a mostrar.', 'Copy and store the key in your secret manager. It cannot be shown again.'))}</div>
         <div id="settingsApiKeysList" class="config-list"></div>
+
+        <hr style="border:none;border-top:1px solid var(--border);" />
+        <strong>${escapeHtml(dbCodesTitle)}</strong>
+        <p class="count">${escapeHtml(dbCodesHint)}</p>
+        <div id="settingsDatabaseCodesList" class="config-list"></div>
+
+        <button class="btn" type="button" id="btnToggleApiTutorial">${escapeHtml(tutorialToggleText)}</button>
+        <div id="settingsApiTutorialWrap" class="api-tutorial-wrap hidden">
+          <label>${escapeHtml(tr('Tutorial y endpoints API', 'API tutorial and endpoints'))}
+            <textarea id="settingsApiTutorialText" class="api-tutorial-text" rows="16" readonly></textarea>
+          </label>
+          <div class="api-tutorial-actions">
+            <button class="btn" type="button" id="btnCopyApiTutorial">${escapeHtml(tutorialCopyText)}</button>
+          </div>
+        </div>
       </div>
 
       <div id="settingsTabBackup" class="modal-body hidden" style="display:grid;gap:12px;">
@@ -3735,6 +3822,11 @@ function openAppSettingsModal() {
   const apiKeyLabel = document.getElementById('settingsApiKeyLabel');
   const apiKeyPlain = document.getElementById('settingsApiKeyPlain');
   const createApiKeyBtn = document.getElementById('btnCreateApiKey');
+  const databaseCodesList = document.getElementById('settingsDatabaseCodesList');
+  const toggleTutorialBtn = document.getElementById('btnToggleApiTutorial');
+  const tutorialWrap = document.getElementById('settingsApiTutorialWrap');
+  const tutorialText = document.getElementById('settingsApiTutorialText');
+  const copyTutorialBtn = document.getElementById('btnCopyApiTutorial');
 
   function renderApiKeys(keys = []) {
     const list = Array.isArray(keys) ? keys : [];
@@ -3777,6 +3869,122 @@ function openAppSettingsModal() {
             renderApiKeys(refreshed.keys || []);
           },
         });
+      });
+    });
+  }
+
+  function renderDatabaseCodes() {
+    if (!databaseCodesList) return;
+
+    if (!STATE.databases.length) {
+      databaseCodesList.innerHTML = `<div class="count" style="padding:8px;">${escapeHtml(tr('No hay bases de datos todavía.', 'No databases yet.'))}</div>`;
+      return;
+    }
+
+    databaseCodesList.innerHTML = STATE.databases
+      .map(database => {
+        const code = String(database.api_code || '').trim();
+        return `
+          <div class="config-row" style="grid-template-columns:1fr auto auto;align-items:center;">
+            <div>
+              <strong>${escapeHtml(database.name)}</strong>
+              <div class="count">ID ${escapeHtml(String(database.id))} · ${escapeHtml(tr('Código', 'Code'))}: ${escapeHtml(code || '-')}</div>
+            </div>
+            <button type="button" class="btn" data-copy-db-code="${escapeHtml(code)}">${escapeHtml(tr('Copiar código', 'Copy code'))}</button>
+            <button type="button" class="btn" data-copy-db-id="${escapeHtml(String(database.id))}">${escapeHtml(tr('Copiar ID', 'Copy ID'))}</button>
+          </div>
+        `;
+      })
+      .join('');
+
+    [...databaseCodesList.querySelectorAll('[data-copy-db-code]')].forEach(button => {
+      button.addEventListener('click', async () => {
+        const code = button.getAttribute('data-copy-db-code') || '';
+        if (!code) return;
+        await copyWithVisualFeedback(button, code, {
+          idle: tr('Copiar código', 'Copy code'),
+          copied: tr('Código copiado', 'Code copied'),
+        });
+      });
+    });
+
+    [...databaseCodesList.querySelectorAll('[data-copy-db-id]')].forEach(button => {
+      button.addEventListener('click', async () => {
+        const id = button.getAttribute('data-copy-db-id') || '';
+        if (!id) return;
+        await copyWithVisualFeedback(button, id, {
+          idle: tr('Copiar ID', 'Copy ID'),
+          copied: tr('ID copiado', 'ID copied'),
+        });
+      });
+    });
+  }
+
+  function buildApiTutorialText() {
+    const origin = window.location.origin;
+    const databaseLines = STATE.databases.length
+      ? STATE.databases
+        .map(item => `- ${item.name} -> code=${item.api_code || '-'} id=${item.id}`)
+        .join('\n')
+      : '- (sin bases de datos todavía)';
+
+    return [
+      tr('Tutorial API dubyDB', 'dubyDB API Tutorial'),
+      '==================================================',
+      '',
+      tr('1) Base URL', '1) Base URL'),
+      origin,
+      '',
+      tr('2) Autenticación (si está habilitada)', '2) Authentication (if enabled)'),
+      'Header: x-api-key: duby_xxx',
+      'o Header: Authorization: Bearer duby_xxx',
+      '',
+      tr('3) Resolver ID de base de datos por código', '3) Resolve database ID from code'),
+      'GET /api/databases/resolve/:code',
+      tr('Ejemplo:', 'Example:'),
+      `GET ${origin}/api/databases/resolve/db_xxxxx`,
+      '',
+      tr('4) Endpoints principales (aceptan ID o código en :id)', '4) Main endpoints (:id accepts numeric id or code)'),
+      'GET /api/databases',
+      'GET /api/databases/:id',
+      'GET /api/databases/:id/records?page=1&pageSize=50',
+      'POST /api/databases/:id/records',
+      'POST /api/databases/:id/properties',
+      'POST /api/databases/:id/analysis',
+      '',
+      tr('5) Subir archivos a registros', '5) Upload files to records'),
+      'POST /api/records/:recordId/attachments/:propertyId (multipart/form-data, campo file)',
+      '',
+      tr('6) Flujo recomendado para integrar', '6) Recommended integration flow'),
+      tr('a) Lista bases o usa el código guardado.', 'a) List databases or use your saved code.'),
+      tr('b) Resuelve el ID con /resolve si lo necesitas.', 'b) Resolve id with /resolve if needed.'),
+      tr('c) Crea o actualiza registros en /records.', 'c) Create or update records in /records.'),
+      tr('d) Sube adjuntos al recordId y propertyId correctos.', 'd) Upload attachments using the target recordId/propertyId.'),
+      '',
+      tr('Bases de datos actuales:', 'Current databases:'),
+      databaseLines,
+    ].join('\n');
+  }
+
+  if (tutorialText) {
+    tutorialText.value = buildApiTutorialText();
+  }
+
+  renderDatabaseCodes();
+
+  if (toggleTutorialBtn && tutorialWrap) {
+    toggleTutorialBtn.addEventListener('click', () => {
+      const willShow = tutorialWrap.classList.contains('hidden');
+      tutorialWrap.classList.toggle('hidden', !willShow);
+      toggleTutorialBtn.textContent = willShow ? tutorialHideText : tutorialToggleText;
+    });
+  }
+
+  if (copyTutorialBtn && tutorialText) {
+    copyTutorialBtn.addEventListener('click', () => {
+      copyWithVisualFeedback(copyTutorialBtn, tutorialText.value, {
+        idle: tutorialCopyText,
+        copied: tutorialCopiedText,
       });
     });
   }
