@@ -4,7 +4,7 @@
 
 dubyDB sits in the space between fragile spreadsheets, overly loose documentation tools, and expensive one-off internal tools. It gives you dynamic schemas, attachments, grouped filters, analytics, audit traces, backups, and API keys in one portable product built on SQLite.
 
-Current version: `1.1.0`
+Current version: `0.0.3`
 
 ## What dubyDB is for
 
@@ -267,4 +267,3 @@ Rebuild the native SQLite dependency:
 cd app
 npm rebuild better-sqlite3
 ```
-

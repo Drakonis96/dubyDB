@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - 2026-03-08
+## [0.0.3] - 2026-03-08
+
+### Changed
+- Aligned the internal app version, README version reference, and public release numbering with the GitHub release flow.
+
+## [0.0.2] - 2026-03-08
 
 ### Added
 - Database templates for photo archive, bibliography, inventory, simple CRM, project management, and research datasets.
