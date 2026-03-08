@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>dubyDB — Dynamic databases</title>
+  <title>dubyDB — Custom databases, files, and analytics</title>
+  <meta name="application-name" content="dubyDB" />
+  <meta name="description" content="dubyDB helps teams organize records, files, and metadata in custom databases with analytics, backups, and API access." />
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -56,10 +58,7 @@
     </aside>
 
     <main class="main" id="mainContent">
-      <section class="empty-state" id="homeState">
-        <h2>Select or create a database</h2>
-        <p>Organize your databases in folders and configure properties, relations, views and dynamic analysis.</p>
-      </section>
+      <section class="empty-state" id="homeState"></section>
 
       <section class="database-shell hidden" id="databaseState">
         <header class="db-header" id="dbHeader">
@@ -72,6 +71,7 @@
               </button>
             </div>
             <p id="dbSubtitle">0 records</p>
+            <div class="db-header-meta" id="dbHeaderMeta"></div>
             <div class="db-actions">
               <button class="btn" id="btnUploadHeader">Cover</button>
               <div class="db-actions-center">
@@ -88,6 +88,8 @@
           </div>
         </header>
 
+        <section id="dbOverview" class="db-overview"></section>
+
         <div class="toolbar">
           <input id="recordSearch" type="text" placeholder="Search records..." />
           <div class="toolbar-actions">
@@ -97,17 +99,24 @@
             <button class="btn btn-icon" id="btnAdvancedSort" type="button" aria-label="Sorting" title="Advanced sorting">
               <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4h2v12h3l-4 4-4-4h3V4Zm6 2h8v2h-8V6Zm0 5h6v2h-6v-2Zm0 5h4v2h-4v-2Z"/></svg>
             </button>
+            <button class="btn btn-icon" id="btnAdvancedGroup" type="button" aria-label="Grouping" title="Grouping">
+              <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h8v6H3V5Zm10 0h8v4h-8V5ZM3 13h8v6H3v-6Zm10-2h8v8h-8v-8Z"/></svg>
+            </button>
           </div>
           <div id="filters" class="filters"></div>
         </div>
 
-        <div class="view-tabs" id="viewTabs"></div>
+        <section class="view-hub">
+          <div id="viewMeta" class="view-meta"></div>
+          <div class="view-tabs" id="viewTabs"></div>
+        </section>
         <div class="view-host" id="viewHost"></div>
       </section>
     </main>
   </div>
 
   <dialog id="modal" class="modal"></dialog>
+  <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
   <script src="js/app.js"></script>
 </body>

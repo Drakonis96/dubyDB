@@ -6,7 +6,9 @@ const STATE = {
   selectedFolderId: null,
   selectedDatabaseId: null,
   selectedDatabase: null,
-  filters: [],
+  filterGroups: [],
+  filterGroupOperator: 'and',
+  groupByPropertyId: null,
   records: [],
   totalRecords: 0,
   totalDatabaseRecords: 0,
@@ -21,6 +23,10 @@ const STATE = {
   appSettings: null,
   selectedRecordIds: [],
   expandedFolderIds: new Set(),
+  databaseContext: null,
+  viewLoading: false,
+  viewLoadingMessage: '',
+  lastFeedback: null,
 };
 
 const I18N = {
@@ -130,6 +136,63 @@ const PROPERTY_TYPES = [
   { value: 'rollup', labelEs: 'Rollup', labelEn: 'Rollup' },
 ];
 
+const DATABASE_TEMPLATES = [
+  {
+    key: 'photoArchive',
+    nameEs: 'Archivo fotográfico',
+    nameEn: 'Photo archive',
+    descriptionEs: 'Organiza imágenes, álbumes, autores y metadatos visuales.',
+    descriptionEn: 'Organize images, albums, authors, and visual metadata.',
+    highlightsEs: ['Galería lista para uso', 'Etiquetas', 'Fecha de captura', 'Adjuntos'],
+    highlightsEn: ['Ready-made gallery', 'Tags', 'Capture date', 'Attachments'],
+  },
+  {
+    key: 'bibliography',
+    nameEs: 'Bibliografía',
+    nameEn: 'Bibliography',
+    descriptionEs: 'Sigue lecturas, estados, temas, enlaces y PDFs.',
+    descriptionEn: 'Track readings, statuses, topics, links, and PDFs.',
+    highlightsEs: ['Estado de lectura', 'Temas', 'DOI/URL', 'PDF'],
+    highlightsEn: ['Reading status', 'Topics', 'DOI/URL', 'PDF'],
+  },
+  {
+    key: 'inventory',
+    nameEs: 'Inventario',
+    nameEn: 'Inventory',
+    descriptionEs: 'Controla categorías, cantidades, ubicación y soporte documental.',
+    descriptionEn: 'Track categories, quantities, locations, and supporting files.',
+    highlightsEs: ['Categorías', 'Cantidades', 'Ubicación', 'Adjuntos'],
+    highlightsEn: ['Categories', 'Quantities', 'Location', 'Attachments'],
+  },
+  {
+    key: 'simpleCrm',
+    nameEs: 'CRM simple',
+    nameEn: 'Simple CRM',
+    descriptionEs: 'Gestiona leads, etapas, valor estimado y próximos contactos.',
+    descriptionEn: 'Manage leads, stages, estimated value, and next touchpoints.',
+    highlightsEs: ['Pipeline', 'Contacto', 'Valor estimado', 'Seguimiento'],
+    highlightsEn: ['Pipeline', 'Contact', 'Estimated value', 'Follow-up'],
+  },
+  {
+    key: 'projectManager',
+    nameEs: 'Gestor de proyectos',
+    nameEn: 'Project manager',
+    descriptionEs: 'Organiza tareas, prioridades, responsables y fechas.',
+    descriptionEn: 'Organize tasks, priorities, owners, and dates.',
+    highlightsEs: ['Estado', 'Prioridad', 'Responsable', 'Etiquetas'],
+    highlightsEn: ['Status', 'Priority', 'Owner', 'Tags'],
+  },
+  {
+    key: 'researchDataset',
+    nameEs: 'Dataset de investigación',
+    nameEn: 'Research dataset',
+    descriptionEs: 'Estructura muestras, fuentes, fechas y control de nulos críticos.',
+    descriptionEn: 'Structure samples, sources, dates, and critical null checks.',
+    highlightsEs: ['Fuente', 'Fecha', 'Etiquetas', 'Nulo crítico'],
+    highlightsEn: ['Source', 'Date', 'Tags', 'Critical null'],
+  },
+];
+
 const BASIC_TAG_COLOR_PALETTE = [
   { name: 'yellow', labelEs: 'Amarillo', labelEn: 'Yellow', hex: '#fdecc8' },
   { name: 'orange', labelEs: 'Naranja', labelEn: 'Orange', hex: '#fadec9' },
@@ -140,6 +203,15 @@ const BASIC_TAG_COLOR_PALETTE = [
   { name: 'blue', labelEs: 'Azul', labelEn: 'Blue', hex: '#d3e5ef' },
   { name: 'gray', labelEs: 'Gris', labelEn: 'Gray', hex: '#e3e2e0' },
   { name: 'black', labelEs: 'Negro', labelEn: 'Black', hex: '#1f1f1f' },
+];
+
+const API_KEY_SCOPE_OPTIONS = [
+  { value: '*', labelEs: 'Acceso total', labelEn: 'Full access' },
+  { value: 'read', labelEs: 'Lectura', labelEn: 'Read' },
+  { value: 'write', labelEs: 'Escritura', labelEn: 'Write' },
+  { value: 'analytics', labelEs: 'Analytics', labelEn: 'Analytics' },
+  { value: 'settings', labelEs: 'Ajustes', labelEn: 'Settings' },
+  { value: 'backup', labelEs: 'Backup / Restore', labelEn: 'Backup / Restore' },
 ];
 
 const COLOR_HEX_BY_NAME = {
@@ -166,6 +238,7 @@ const FILTER_OPERATORS = [
   { value: 'isNotEmpty', labelEs: 'No está vacío', labelEn: 'Is not empty' },
   { value: 'before', labelEs: 'Antes de', labelEn: 'Before' },
   { value: 'after', labelEs: 'Después de', labelEn: 'After' },
+  { value: 'between', labelEs: 'Entre', labelEn: 'Between' },
   { value: 'checked', labelEs: 'Marcado', labelEn: 'Checked' },
   { value: 'unchecked', labelEs: 'No marcado', labelEn: 'Unchecked' },
 ];
@@ -229,6 +302,7 @@ function icon(name) {
     swap: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m16 3 4 4-4 4V8H9V6h7V3ZM8 13v3h7v2H8v3l-4-4 4-4Z"/></svg>',
     filter: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h18v2l-7 7v5l-4 2v-7L3 7V5Z"/></svg>',
     sort: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4h2v12h3l-4 4-4-4h3V4Zm6 2h8v2h-8V6Zm0 5h6v2h-6v-2Zm0 5h4v2h-4v-2Z"/></svg>',
+    group: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h8v6H3V5Zm10 0h8v4h-8V5ZM3 13h8v6H3v-6Zm10-2h8v8h-8v-8Z"/></svg>',
     hide: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5c5.5 0 9.58 3.61 11 7-1.42 3.39-5.5 7-11 7S2.42 15.39 1 12c1.42-3.39 5.5-7 11-7Zm0 2C8.13 7 5.06 9.32 3.3 12 5.06 14.68 8.13 17 12 17s6.94-2.32 8.7-5C18.94 9.32 15.87 7 12 7Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"/></svg>',
     fit: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 4h7v2H7.41L10 8.59 8.59 10 6 7.41V11H4V4Zm16 0v7h-2V7.41L15.41 10 14 8.59 16.59 6H13V4h7ZM4 13h2v3.59L8.59 14 10 15.41 7.41 18H11v2H4v-7Zm16 0v7h-7v-2h3.59L14 15.41 15.41 14 18 16.59V13h2Z"/></svg>',
     copy: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm4 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h12v14Z"/></svg>',
@@ -298,7 +372,7 @@ function openImagePreviewModal(url, fileName = '') {
     </form>
   `;
 
-  modal.showModal();
+  if (!modal.open) modal.showModal();
 
   const closeBtn = modal.querySelector('#imagePreviewClose');
   const downloadBtn = modal.querySelector('#imagePreviewDownload');
@@ -323,6 +397,378 @@ function openImagePreviewModal(url, fileName = '') {
   }, { once: true });
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = size;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatAttachmentDate(dateText) {
+  const parsed = new Date(String(dateText || ''));
+  if (Number.isNaN(parsed.getTime())) return tr('Sin fecha', 'No date');
+  return new Intl.DateTimeFormat(STATE.language === 'en' ? 'en-US' : 'es-ES', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(parsed);
+}
+
+function formatDateTime(dateText) {
+  return formatAttachmentDate(dateText);
+}
+
+function formatRelativeTime(dateText) {
+  const parsed = new Date(String(dateText || ''));
+  if (Number.isNaN(parsed.getTime())) return tr('Sin fecha', 'No date');
+
+  const diffMs = parsed.getTime() - Date.now();
+  const minutes = Math.round(diffMs / (60 * 1000));
+  const rtf = new Intl.RelativeTimeFormat(STATE.language === 'en' ? 'en-US' : 'es-ES', { numeric: 'auto' });
+
+  if (Math.abs(minutes) < 60) return rtf.format(minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return rtf.format(hours, 'hour');
+  const days = Math.round(hours / 24);
+  if (Math.abs(days) < 30) return rtf.format(days, 'day');
+  const months = Math.round(days / 30);
+  return rtf.format(months, 'month');
+}
+
+function propertyTypeGuideItems() {
+  return [
+    {
+      title: tr('Texto y URL', 'Text and URL'),
+      description: tr('Para nombres, descripciones, referencias, enlaces o identificadores legibles.', 'For names, descriptions, references, links, or readable identifiers.'),
+    },
+    {
+      title: tr('Select, multi-select y checkbox', 'Select, multi-select, and checkbox'),
+      description: tr('Para estados, etiquetas, categorías y valores rápidos de clasificación.', 'For statuses, tags, categories, and fast classification values.'),
+    },
+    {
+      title: tr('Fecha y hora', 'Date and time'),
+      description: tr('Para seguimiento temporal, vencimientos, cronologías y análisis por periodos.', 'For time tracking, due dates, timelines, and period-based analysis.'),
+    },
+    {
+      title: tr('Adjuntos, relación y rollup', 'Attachments, relation, and rollup'),
+      description: tr('Para conectar registros, reunir archivos y construir métricas derivadas.', 'To connect records, gather files, and build derived metrics.'),
+    },
+  ];
+}
+
+function showToast(message, kind = 'info', timeoutMs = 2600) {
+  const stack = document.getElementById('toastStack');
+  if (!stack || !message) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast-item is-${kind}`;
+  toast.innerHTML = `
+    <div class="toast-item-icon">${kind === 'success' ? '✓' : kind === 'error' ? '!' : kind === 'warning' ? '!' : 'i'}</div>
+    <div class="toast-item-copy">
+      <strong>${escapeHtml(kind === 'success' ? tr('Hecho', 'Done') : kind === 'error' ? tr('Error', 'Error') : kind === 'warning' ? tr('Atención', 'Warning') : tr('Info', 'Info'))}</strong>
+      <span>${escapeHtml(message)}</span>
+    </div>
+  `;
+  stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('is-visible'));
+
+  const dismiss = () => {
+    toast.classList.remove('is-visible');
+    setTimeout(() => toast.remove(), 180);
+  };
+
+  setTimeout(dismiss, timeoutMs);
+}
+
+function setLastFeedback(kind, message, options = {}) {
+  STATE.lastFeedback = message
+    ? {
+      kind,
+      message,
+      persistent: Boolean(options.persistent),
+      at: new Date().toISOString(),
+    }
+    : null;
+  if (STATE.selectedDatabaseId) renderViewMeta();
+
+  if (!options.persistent && message) {
+    setTimeout(() => {
+      if (STATE.lastFeedback?.message === message && !STATE.lastFeedback?.persistent) {
+        STATE.lastFeedback = null;
+        if (STATE.selectedDatabaseId) renderViewMeta();
+      }
+    }, options.timeoutMs || 2200);
+  }
+}
+
+function setViewLoading(isLoading, message = '') {
+  STATE.viewLoading = Boolean(isLoading);
+  STATE.viewLoadingMessage = isLoading ? String(message || tr('Actualizando vista…', 'Refreshing view…')) : '';
+  const host = document.getElementById('viewHost');
+  host?.classList.toggle('is-loading', STATE.viewLoading);
+  if (host) {
+    if (STATE.viewLoadingMessage) host.setAttribute('data-loading-label', STATE.viewLoadingMessage);
+    else host.removeAttribute('data-loading-label');
+  }
+  if (STATE.selectedDatabaseId) renderViewMeta();
+}
+
+function isFavoriteView(view) {
+  return Boolean(view?.config?.favorite);
+}
+
+function favoriteViewsForCurrentDatabase() {
+  const views = Array.isArray(STATE.selectedDatabase?.views) ? STATE.selectedDatabase.views : [];
+  const favorites = views.filter(view => isFavoriteView(view));
+  return favorites.length ? favorites : views.slice(0, 3);
+}
+
+function viewDescriptor(type) {
+  if (type === 'table') {
+    return {
+      title: tr('Edición estructurada', 'Structured editing'),
+      description: tr('Tabla para revisar, editar y filtrar registros con rapidez.', 'Table view to review, edit, and filter records quickly.'),
+    };
+  }
+  if (type === 'gallery') {
+    return {
+      title: tr('Lectura visual', 'Visual reading'),
+      description: tr('Galería para explorar contenido, portadas y adjuntos con más contexto.', 'Gallery view to browse content, covers, and attachments with more context.'),
+    };
+  }
+  return {
+    title: tr('Lectura analítica', 'Analytical reading'),
+    description: tr('Análisis para detectar patrones, distribuciones y cambios en el tiempo.', 'Analysis view to detect patterns, distributions, and changes over time.'),
+  };
+}
+
+function formatApiKeyScopes(scopes) {
+  const items = Array.isArray(scopes) ? scopes : [];
+  if (!items.length) return tr('Acceso total', 'Full access');
+  return items.map(scope => {
+    const option = API_KEY_SCOPE_OPTIONS.find(item => item.value === scope);
+    return option ? (STATE.language === 'en' ? option.labelEn : option.labelEs) : scope;
+  }).join(', ');
+}
+
+function attachmentPreviewKind(item) {
+  const mime = String(item?.mime_type || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (isImageAttachment(item?.url || '')) return 'image';
+  const docKind = attachmentFileKind(item?.url || '');
+  return docKind === 'audio' || docKind === 'video' ? docKind : 'document';
+}
+
+function attachmentMatchesBrowserFilters(item, filters) {
+  const kind = attachmentPreviewKind(item);
+  const size = Number(item?.size_bytes || 0);
+  const createdAt = String(item?.created_at || '');
+
+  if (filters.type !== 'all' && kind !== filters.type) return false;
+  if (filters.size === 'small' && size >= 1024 * 1024) return false;
+  if (filters.size === 'medium' && (size < 1024 * 1024 || size > 10 * 1024 * 1024)) return false;
+  if (filters.size === 'large' && size <= 10 * 1024 * 1024) return false;
+  if (filters.date === '7d') {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    if (!createdAt || new Date(createdAt).getTime() < cutoff) return false;
+  }
+  if (filters.date === '30d') {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    if (!createdAt || new Date(createdAt).getTime() < cutoff) return false;
+  }
+  if (filters.date === 'year') {
+    const currentYear = new Date().getFullYear();
+    if (!createdAt || new Date(createdAt).getFullYear() !== currentYear) return false;
+  }
+
+  return true;
+}
+
+async function openAttachmentBrowser({ recordId, propertyId = null, attachments = [], initialUrl = '', title = '' } = {}) {
+  if (!recordId) return;
+
+  const modal = document.getElementById('modal');
+  modal.style.width = 'min(1180px, 96vw)';
+  modal.innerHTML = `
+    <div class="attachment-browser">
+      <div class="modal-title">
+        <span>${escapeHtml(title || tr('Explorador de adjuntos', 'Attachment browser'))}</span>
+        <button type="button" class="modal-close-btn" id="attachmentBrowserClose" aria-label="${escapeHtml(tr('Cerrar', 'Close'))}" title="${escapeHtml(tr('Cerrar', 'Close'))}">×</button>
+      </div>
+      <div class="attachment-browser-toolbar">
+        <label>${escapeHtml(tr('Tipo', 'Type'))}
+          <select id="attachmentBrowserType">
+            <option value="all">${escapeHtml(tr('Todos', 'All'))}</option>
+            <option value="image">${escapeHtml(tr('Imagen', 'Image'))}</option>
+            <option value="video">${escapeHtml(tr('Vídeo', 'Video'))}</option>
+            <option value="audio">${escapeHtml(tr('Audio', 'Audio'))}</option>
+            <option value="document">${escapeHtml(tr('Documento', 'Document'))}</option>
+          </select>
+        </label>
+        <label>${escapeHtml(tr('Tamaño', 'Size'))}
+          <select id="attachmentBrowserSize">
+            <option value="all">${escapeHtml(tr('Todos', 'All'))}</option>
+            <option value="small">${escapeHtml(tr('Menos de 1 MB', 'Under 1 MB'))}</option>
+            <option value="medium">${escapeHtml(tr('1 MB a 10 MB', '1 MB to 10 MB'))}</option>
+            <option value="large">${escapeHtml(tr('Más de 10 MB', 'Over 10 MB'))}</option>
+          </select>
+        </label>
+        <label>${escapeHtml(tr('Fecha', 'Date'))}
+          <select id="attachmentBrowserDate">
+            <option value="all">${escapeHtml(tr('Todas', 'All'))}</option>
+            <option value="7d">${escapeHtml(tr('Últimos 7 días', 'Last 7 days'))}</option>
+            <option value="30d">${escapeHtml(tr('Últimos 30 días', 'Last 30 days'))}</option>
+            <option value="year">${escapeHtml(tr('Este año', 'This year'))}</option>
+          </select>
+        </label>
+      </div>
+      <div class="attachment-browser-layout">
+        <div class="attachment-browser-list" id="attachmentBrowserList"></div>
+        <aside class="attachment-browser-preview" id="attachmentBrowserPreview"></aside>
+      </div>
+    </div>
+  `;
+
+  if (!modal.open) modal.showModal();
+
+  const allEntries = ((attachments && attachments.length) ? attachments : await api(`/api/records/${recordId}/attachments`))
+    .filter(item => !propertyId || Number(item.property_id) === Number(propertyId));
+
+  const state = {
+    type: 'all',
+    size: 'all',
+    date: 'all',
+    selectedId: allEntries.find(item => item.url === initialUrl)?.id || allEntries[0]?.id || null,
+  };
+
+  const closeModal = () => {
+    if (modal.open) modal.close();
+  };
+
+  function renderPreview(item) {
+    const preview = document.getElementById('attachmentBrowserPreview');
+    if (!preview) return;
+    if (!item) {
+      preview.innerHTML = `<div class="analysis-empty">${escapeHtml(tr('No hay adjuntos para estos filtros.', 'No attachments match these filters.'))}</div>`;
+      return;
+    }
+
+    const kind = attachmentPreviewKind(item);
+    let media = `<div class="attachment-browser-doc">${attachmentIconForUrl(item.url)}<span>${escapeHtml(item.file_name || attachmentFileName(item.url))}</span></div>`;
+    if (kind === 'image') {
+      media = `<div class="attachment-browser-media"><img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.file_name || attachmentFileName(item.url))}" /></div>`;
+    } else if (kind === 'video') {
+      media = `<div class="attachment-browser-media"><video src="${escapeHtml(item.url)}" controls preload="metadata"></video></div>`;
+    } else if (kind === 'audio') {
+      media = `<div class="attachment-browser-media attachment-browser-audio"><audio src="${escapeHtml(item.url)}" controls preload="metadata"></audio></div>`;
+    }
+
+    preview.innerHTML = `
+      ${media}
+      <div class="attachment-browser-meta">
+        <strong>${escapeHtml(item.file_name || attachmentFileName(item.url))}</strong>
+        <span>${escapeHtml(item.mime_type || attachmentFileKind(item.url))}</span>
+        <span>${escapeHtml(formatFileSize(item.size_bytes))}</span>
+        <span>${escapeHtml(formatAttachmentDate(item.created_at))}</span>
+      </div>
+      <div class="attachment-browser-actions">
+        <button type="button" class="btn" id="attachmentBrowserDownload">${icon('download')}<span>${escapeHtml(tr('Descargar', 'Download'))}</span></button>
+        <button type="button" class="btn btn-danger" id="attachmentBrowserDelete">${icon('trash')}<span>${escapeHtml(tr('Eliminar adjunto', 'Delete attachment'))}</span></button>
+      </div>
+    `;
+
+    preview.querySelector('#attachmentBrowserDownload')?.addEventListener('click', () => {
+      confirmAttachmentDownload(item.downloadUrl || item.url);
+    });
+
+    preview.querySelector('#attachmentBrowserDelete')?.addEventListener('click', () => {
+      openConfirmMini({
+        message: t('deleteAttachmentConfirm'),
+        confirmText: t('deleteAttachment'),
+        danger: true,
+        onConfirm: async () => {
+          await api(`/api/attachments/${item.id}`, { method: 'DELETE' });
+          closeModal();
+          await loadRecords();
+          await refreshBootstrap();
+        },
+      });
+    });
+  }
+
+  function renderBrowser() {
+    const listHost = document.getElementById('attachmentBrowserList');
+    if (!listHost) return;
+    const filtered = allEntries.filter(item => attachmentMatchesBrowserFilters(item, state));
+    if (!filtered.some(item => item.id === state.selectedId)) {
+      state.selectedId = filtered[0]?.id || null;
+    }
+
+    listHost.innerHTML = '';
+    if (!filtered.length) {
+      listHost.innerHTML = `<div class="analysis-empty">${escapeHtml(tr('No hay adjuntos con esos filtros.', 'No attachments match these filters.'))}</div>`;
+      renderPreview(null);
+      return;
+    }
+
+    filtered.forEach(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `attachment-browser-item ${state.selectedId === item.id ? 'is-active' : ''}`;
+      const kind = attachmentPreviewKind(item);
+      const thumb = kind === 'image'
+        ? `<img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.file_name || attachmentFileName(item.url))}" />`
+        : attachmentIconForUrl(item.url);
+      btn.innerHTML = `
+        <span class="attachment-browser-item-thumb">${thumb}</span>
+        <span class="attachment-browser-item-copy">
+          <strong>${escapeHtml(item.file_name || attachmentFileName(item.url))}</strong>
+          <span>${escapeHtml(item.mime_type || attachmentFileKind(item.url))}</span>
+          <span>${escapeHtml(formatFileSize(item.size_bytes))} · ${escapeHtml(formatAttachmentDate(item.created_at))}</span>
+        </span>
+      `;
+      btn.addEventListener('click', () => {
+        state.selectedId = item.id;
+        renderBrowser();
+      });
+      listHost.appendChild(btn);
+    });
+
+    renderPreview(filtered.find(item => item.id === state.selectedId) || filtered[0]);
+  }
+
+  document.getElementById('attachmentBrowserClose')?.addEventListener('click', closeModal);
+  document.getElementById('attachmentBrowserType')?.addEventListener('change', event => {
+    state.type = event.target.value;
+    renderBrowser();
+  });
+  document.getElementById('attachmentBrowserSize')?.addEventListener('change', event => {
+    state.size = event.target.value;
+    renderBrowser();
+  });
+  document.getElementById('attachmentBrowserDate')?.addEventListener('change', event => {
+    state.date = event.target.value;
+    renderBrowser();
+  });
+
+  const onModalClick = event => {
+    if (event.target === modal) closeModal();
+  };
+  modal.addEventListener('click', onModalClick);
+  modal.addEventListener('close', () => {
+    modal.removeEventListener('click', onModalClick);
+  }, { once: true });
+
+  renderBrowser();
+}
+
 function shouldIgnoreRowBackgroundClick(target) {
   if (!(target instanceof Element)) return false;
   if (target.closest('.select-col')) return true;
@@ -345,7 +791,7 @@ function openConfirmMini({ message, confirmText = 'Confirmar', cancelText, onCon
       </div>
     </form>
   `;
-  modal.showModal();
+  if (!modal.open) modal.showModal();
   modal.querySelector('#confirmMiniCancel')?.addEventListener('click', () => {
     modal.close();
   });
@@ -655,6 +1101,7 @@ async function init() {
   restoreSidebarState();
   setupThemeSwitcher();
   applyLanguage();
+  renderHomeState();
   renderSidebar();
 }
 
@@ -674,6 +1121,7 @@ function bindGlobalActions() {
   });
   document.getElementById('btnAdvancedFilter').addEventListener('click', () => openAdvancedCriteriaModal({ focus: 'filter' }));
   document.getElementById('btnAdvancedSort').addEventListener('click', () => openAdvancedCriteriaModal({ focus: 'sort' }));
+  document.getElementById('btnAdvancedGroup').addEventListener('click', () => openAdvancedCriteriaModal({ focus: 'group' }));
   document.getElementById('btnNewProperty').addEventListener('click', openCreatePropertyModal);
   document.getElementById('btnNewRecord').addEventListener('click', createEmptyRecord);
   document.getElementById('btnSettings').addEventListener('click', openDatabaseSettingsModal);
@@ -681,6 +1129,16 @@ function bindGlobalActions() {
   document.getElementById('btnNewView').addEventListener('click', openCreateViewModal);
   document.getElementById('btnUploadHeader').addEventListener('click', () => document.getElementById('headerInput').click());
   document.getElementById('headerInput').addEventListener('change', uploadHeaderImage);
+  document.getElementById('homeState').addEventListener('click', event => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const action = target.closest('[data-home-action]')?.getAttribute('data-home-action') || '';
+    if (action === 'template') openCreateDatabaseModal({ startStep: 1 });
+    if (action === 'blank') openCreateDatabaseModal({ initialTemplateKey: '', startStep: 2 });
+    if (action === 'guide') openCreateDatabaseModal({ initialTemplateKey: DATABASE_TEMPLATES[0]?.key || '', startStep: 1 });
+    const openDbId = Number(target.closest('[data-open-db-id]')?.getAttribute('data-open-db-id') || 0);
+    if (openDbId) selectDatabase(openDbId).catch(error => console.error('No se pudo abrir la base', error));
+  });
   document.addEventListener('pointerdown', event => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -718,21 +1176,142 @@ function getActiveView() {
   return STATE.selectedDatabase?.views?.find(view => view.id === STATE.activeViewId) || null;
 }
 
+function renderHomeState() {
+  const home = document.getElementById('homeState');
+  if (!home) return;
+
+  const hasDatabases = STATE.databases.length > 0;
+  const recommended = STATE.databases
+    .slice()
+    .sort((a, b) => {
+      const af = isDatabaseFavorite(a.id) ? 1 : 0;
+      const bf = isDatabaseFavorite(b.id) ? 1 : 0;
+      if (af !== bf) return bf - af;
+      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    })
+    .slice(0, 4);
+  const stepCards = [
+    {
+      step: '01',
+      title: tr('Empieza con una plantilla', 'Start from a template'),
+      text: tr('Crea una base con estructura inicial para inventario, CRM, bibliografía o datasets.', 'Create a database with a starting structure for inventory, CRM, bibliography, or datasets.'),
+    },
+    {
+      step: '02',
+      title: tr('Modela tus propiedades', 'Model your properties'),
+      text: tr('Añade texto, fechas, estados, relaciones, adjuntos y rollups según tu flujo.', 'Add text, dates, statuses, relations, attachments, and rollups for your workflow.'),
+    },
+    {
+      step: '03',
+      title: tr('Lee la misma base de varias formas', 'Read the same base in multiple ways'),
+      text: tr('Alterna entre tabla, galería y análisis sin cambiar de dataset.', 'Switch between table, gallery, and analysis without changing datasets.'),
+    },
+  ];
+  const templatePreview = DATABASE_TEMPLATES.slice(0, 4).map(template => `
+    <button type="button" class="home-template-pill" data-home-action="template" data-template-key="${escapeHtml(template.key)}">
+      ${icon('star')}
+      <span>${escapeHtml(STATE.language === 'en' ? template.nameEn : template.nameEs)}</span>
+    </button>
+  `).join('');
+  const resumeCards = recommended.length
+    ? recommended.map(database => `
+      <button type="button" class="home-resume-card" data-open-db-id="${database.id}">
+        <strong>${escapeHtml(database.name)}</strong>
+        <span>${escapeHtml(tr(`${Number(database.record_count || 0)} registros`, `${Number(database.record_count || 0)} records`))}</span>
+        <span>${escapeHtml(tr(`Actualizada ${formatRelativeTime(database.updated_at)}`, `Updated ${formatRelativeTime(database.updated_at)}`))}</span>
+      </button>
+    `).join('')
+    : `<div class="home-empty-note">${escapeHtml(tr('Todavía no hay bases. Usa una plantilla para arrancar con estructura y ejemplos.', 'There are no databases yet. Use a template to start with structure and examples.'))}</div>`;
+
+  home.innerHTML = `
+    <div class="home-hero">
+      <div class="home-hero-copy">
+        <span class="home-eyebrow">${escapeHtml(tr('Workspace de datos y archivos', 'Data and file workspace'))}</span>
+        <h2>${escapeHtml(hasDatabases ? tr('Sigue construyendo tu sistema', 'Keep building your system') : tr('Tu primera base puede quedar bien en minutos', 'Your first database can feel right in minutes'))}</h2>
+        <p>${escapeHtml(tr('dubyDB convierte registros, archivos y metadatos en bases flexibles con vistas, análisis, backups y API. Empieza con una plantilla o crea una estructura propia paso a paso.', 'dubyDB turns records, files, and metadata into flexible databases with views, analytics, backups, and API access. Start from a template or build your own structure step by step.'))}</p>
+        <div class="home-hero-actions">
+          <button type="button" class="btn btn-primary" data-home-action="template">${escapeHtml(tr('Crear desde plantilla', 'Create from template'))}</button>
+          <button type="button" class="btn" data-home-action="blank">${escapeHtml(tr('Empezar en blanco', 'Start blank'))}</button>
+          <button type="button" class="btn" data-home-action="guide">${escapeHtml(tr('Ver guía rápida', 'Open quick guide'))}</button>
+        </div>
+        <div class="home-template-row">${templatePreview}</div>
+      </div>
+      <div class="home-hero-side">
+        <div class="home-side-card">
+          <strong>${escapeHtml(tr('Paso a paso recomendado', 'Recommended first steps'))}</strong>
+          <div class="home-step-list">
+            ${stepCards.map(item => `
+              <div class="home-step-card">
+                <span>${escapeHtml(item.step)}</span>
+                <strong>${escapeHtml(item.title)}</strong>
+                <p>${escapeHtml(item.text)}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="home-resume-grid">
+      <div class="home-side-card">
+        <strong>${escapeHtml(hasDatabases ? tr('Continúa donde lo dejaste', 'Continue where you left off') : tr('Qué puedes montar aquí', 'What you can build here'))}</strong>
+        <div class="home-resume-list">${resumeCards}</div>
+      </div>
+      <div class="home-side-card">
+        <strong>${escapeHtml(tr('Tipos de propiedad más usados', 'Most-used property types'))}</strong>
+        <div class="home-property-guide">
+          ${propertyTypeGuideItems().map(item => `
+            <div class="home-property-guide-item">
+              <strong>${escapeHtml(item.title)}</strong>
+              <p>${escapeHtml(item.description)}</p>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  [...home.querySelectorAll('[data-template-key]')].forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const key = button.getAttribute('data-template-key') || '';
+      openCreateDatabaseModal({ initialTemplateKey: key });
+    });
+  });
+}
+
+function emptyFilterGroup() {
+  return { logic: 'and', rules: [] };
+}
+
 function normalizeViewCriteria(criteria = {}) {
   const validPropertyIds = new Set((STATE.selectedDatabase?.properties || []).map(prop => Number(prop.id)));
   const allowedOperators = new Set(FILTER_OPERATORS.map(item => item.value));
-
-  const filters = Array.isArray(criteria.filters)
-    ? criteria.filters
-      .map(item => {
-        const propertyId = Number(item?.propertyId || 0);
-        if (!validPropertyIds.has(propertyId)) return null;
-        const operator = allowedOperators.has(item?.operator) ? item.operator : 'contains';
-        const value = item?.value === null || item?.value === undefined ? '' : String(item.value);
-        return { propertyId, operator, value };
-      })
-      .filter(Boolean)
+  const legacyGroups = Array.isArray(criteria.filters)
+    ? [{ logic: 'and', rules: criteria.filters }]
     : [];
+  const rawGroups = Array.isArray(criteria.groups)
+    ? criteria.groups
+    : legacyGroups;
+
+  const filterGroups = rawGroups
+    .map(group => {
+      const rules = Array.isArray(group?.rules)
+        ? group.rules.map(item => {
+          const propertyId = Number(item?.propertyId || 0);
+          if (!validPropertyIds.has(propertyId)) return null;
+          const operator = allowedOperators.has(item?.operator) ? item.operator : 'contains';
+          const value = item?.value === null || item?.value === undefined ? '' : String(item.value);
+          const valueTo = item?.valueTo === null || item?.valueTo === undefined ? '' : String(item.valueTo);
+          return { propertyId, operator, value, valueTo };
+        }).filter(Boolean)
+        : [];
+      if (!rules.length) return null;
+      return {
+        logic: String(group?.logic || 'and').toLowerCase() === 'or' ? 'or' : 'and',
+        rules,
+      };
+    })
+    .filter(Boolean);
 
   const sorts = Array.isArray(criteria.sorts)
     ? criteria.sorts
@@ -745,7 +1324,16 @@ function normalizeViewCriteria(criteria = {}) {
       .filter(Boolean)
     : [];
 
-  return { filters, sorts };
+  const groupByPropertyId = validPropertyIds.has(Number(criteria.groupByPropertyId || 0))
+    ? Number(criteria.groupByPropertyId)
+    : null;
+
+  return {
+    filterGroups,
+    filterGroupOperator: String(criteria.logic || criteria.groupLogic || 'and').toLowerCase() === 'or' ? 'or' : 'and',
+    sorts,
+    groupByPropertyId,
+  };
 }
 
 function applyCriteriaFromActiveView() {
@@ -753,11 +1341,13 @@ function applyCriteriaFromActiveView() {
   const config = activeView?.config || {};
   const rawCriteria = config.criteria && typeof config.criteria === 'object'
     ? config.criteria
-    : { filters: config.filters, sorts: config.sorts };
+    : { filters: config.filters, sorts: config.sorts, groupByPropertyId: config.groupByPropertyId };
   const normalized = normalizeViewCriteria(rawCriteria);
 
-  STATE.filters = normalized.filters;
+  STATE.filterGroups = normalized.filterGroups;
+  STATE.filterGroupOperator = normalized.filterGroupOperator;
   STATE.sorts = normalized.sorts;
+  STATE.groupByPropertyId = normalized.groupByPropertyId;
   STATE.page = 1;
 }
 
@@ -765,11 +1355,18 @@ async function persistActiveViewCriteria() {
   const activeView = getActiveView();
   if (!activeView) return;
 
-  const normalized = normalizeViewCriteria({ filters: STATE.filters, sorts: STATE.sorts });
+  const normalized = normalizeViewCriteria({
+    groups: STATE.filterGroups,
+    logic: STATE.filterGroupOperator,
+    sorts: STATE.sorts,
+    groupByPropertyId: STATE.groupByPropertyId,
+  });
   const nextConfig = cloneJson(activeView.config || {});
   nextConfig.criteria = {
-    filters: normalized.filters,
+    groups: normalized.filterGroups,
+    logic: normalized.filterGroupOperator,
     sorts: normalized.sorts,
+    groupByPropertyId: normalized.groupByPropertyId,
   };
 
   await persistActiveViewConfig(nextConfig);
@@ -785,6 +1382,43 @@ async function persistActiveViewConfig(nextConfig) {
   });
 
   activeView.config = nextConfig;
+}
+
+function currentFiltersPayload() {
+  return {
+    logic: STATE.filterGroupOperator,
+    groups: STATE.filterGroups,
+  };
+}
+
+function activeGroupProperty() {
+  return STATE.selectedDatabase?.properties?.find(prop => prop.id === Number(STATE.groupByPropertyId || 0)) || null;
+}
+
+function displayGroupValue(record, prop) {
+  if (!prop) return tr('Sin grupo', 'Ungrouped');
+  const raw = record.values[prop.key];
+  if (Array.isArray(raw)) {
+    const list = raw.map(item => String(item || '').trim()).filter(Boolean);
+    return list.length ? list.join(', ') : tr('Sin valor', 'No value');
+  }
+  return raw === null || raw === undefined || raw === ''
+    ? tr('Sin valor', 'No value')
+    : String(raw);
+}
+
+function groupRecordsByProperty(records, prop) {
+  if (!prop) return [{ key: '__all__', label: tr('Todos', 'All'), records: [...records] }];
+  const map = new Map();
+  records.forEach(record => {
+    const label = displayGroupValue(record, prop);
+    const key = String(label);
+    if (!map.has(key)) {
+      map.set(key, { key, label, records: [] });
+    }
+    map.get(key).records.push(record);
+  });
+  return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
 }
 
 function orderedVisibleProperties() {
@@ -1228,15 +1862,20 @@ async function refreshBootstrap() {
   STATE.language = bootstrap.settings?.ui?.language === 'es' ? 'es' : 'en';
   syncSidebarFavoritesWithData();
   applyLanguage();
+  renderHomeState();
 }
 
 async function selectDatabase(databaseId) {
   STATE.selectedDatabaseId = databaseId;
   STATE.page = 1;
   STATE.search = '';
+  STATE.databaseContext = null;
+  STATE.lastFeedback = null;
   document.getElementById('recordSearch').value = '';
 
+  setViewLoading(true, tr('Cargando base…', 'Loading database…'));
   STATE.selectedDatabase = await api(`/api/databases/${databaseId}`);
+  await loadDatabaseContext();
   STATE.totalDatabaseRecords = Number(STATE.selectedDatabase.totalRecords || 0);
   STATE.totalRecords = STATE.totalDatabaseRecords;
   STATE.selectedFolderId = STATE.selectedDatabase.folder_id || null;
@@ -1247,8 +1886,10 @@ async function selectDatabase(databaseId) {
   showDatabaseShell();
   renderSidebar();
   renderDatabaseHeader();
+  renderDatabaseOverview();
   renderFilters();
   renderViewTabs();
+  renderViewMeta();
   await loadRecords();
 }
 
@@ -1268,6 +1909,7 @@ function renderDatabaseHeader() {
   const cover = document.getElementById('dbHeaderCover');
   const title = document.getElementById('dbTitle');
   const subtitle = document.getElementById('dbSubtitle');
+  const meta = document.getElementById('dbHeaderMeta');
 
   if (db.header_image) {
     cover.style.background = `center / cover no-repeat url('/uploads/${db.header_image}')`;
@@ -1278,7 +1920,234 @@ function renderDatabaseHeader() {
   title.textContent = db.name;
   const totalAll = Number(STATE.totalDatabaseRecords || 0);
   const totalFiltered = Number(STATE.totalRecords || 0);
-  subtitle.textContent = `BD: ${totalAll.toLocaleString()} (${toPercent(totalAll, totalAll)}%) · Seleccionados: ${totalFiltered.toLocaleString()} (${toPercent(totalFiltered, totalAll)}%)`;
+  subtitle.textContent = tr(
+    `${totalAll.toLocaleString()} registros totales · ${totalFiltered.toLocaleString()} en la lectura actual`,
+    `${totalAll.toLocaleString()} total records · ${totalFiltered.toLocaleString()} in the current lens`,
+  );
+
+  if (meta) {
+    const folderName = STATE.folders.find(folder => folder.id === db.folder_id)?.name || tr('Sin carpeta', 'No folder');
+    const attachmentCount = Number(STATE.databaseContext?.attachmentCount || 0);
+    const integrityIssues = Number(STATE.databaseContext?.brokenRelations?.length || 0);
+    meta.innerHTML = `
+      <span class="db-header-chip">${escapeHtml(tr(`Carpeta: ${folderName}`, `Folder: ${folderName}`))}</span>
+      <span class="db-header-chip">${escapeHtml(tr(`Propiedades: ${Number(db.properties?.length || 0)}`, `Properties: ${Number(db.properties?.length || 0)}`))}</span>
+      <span class="db-header-chip">${escapeHtml(tr(`Vistas: ${Number(db.views?.length || 0)}`, `Views: ${Number(db.views?.length || 0)}`))}</span>
+      <span class="db-header-chip">${escapeHtml(tr(`Adjuntos: ${attachmentCount}`, `Attachments: ${attachmentCount}`))}</span>
+      <span class="db-header-chip ${integrityIssues ? 'is-warning' : 'is-good'}">${escapeHtml(integrityIssues ? tr(`Relaciones a revisar: ${integrityIssues}`, `Relations to review: ${integrityIssues}`) : tr('Integridad OK', 'Integrity OK'))}</span>
+    `;
+  }
+}
+
+async function loadDatabaseContext() {
+  if (!STATE.selectedDatabaseId) return;
+  STATE.databaseContext = await api(`/api/databases/${STATE.selectedDatabaseId}/context`);
+}
+
+function renderDatabaseOverview() {
+  const host = document.getElementById('dbOverview');
+  if (!host) return;
+  if (!STATE.selectedDatabase) {
+    host.innerHTML = '';
+    return;
+  }
+
+  const ctx = STATE.databaseContext || {};
+  const db = STATE.selectedDatabase;
+  const activityItems = Array.isArray(ctx.recentActivity) ? ctx.recentActivity.slice(0, 5) : [];
+  const attachmentItems = Array.isArray(ctx.recentAttachments) ? ctx.recentAttachments.slice(0, 4) : [];
+  const favoriteViews = Array.isArray(ctx.favoriteViews) && ctx.favoriteViews.length
+    ? ctx.favoriteViews
+    : favoriteViewsForCurrentDatabase();
+  const mainProperties = visibleProperties()
+    .filter(prop => prop.key !== 'id')
+    .slice(0, 6);
+  const relationWarnings = Array.isArray(ctx.brokenRelations) ? ctx.brokenRelations : [];
+
+  host.innerHTML = `
+    <div class="db-overview-grid">
+      <section class="db-overview-card db-overview-card-wide">
+        <div class="db-overview-head">
+          <div>
+            <strong>${escapeHtml(tr('Resumen rápido', 'Quick summary'))}</strong>
+            <span>${escapeHtml(tr('Lo esencial para orientarte al abrir esta base', 'The essentials you need when opening this database'))}</span>
+          </div>
+          <div class="db-overview-actions">
+            <button type="button" class="btn" data-overview-action="record">${escapeHtml(tr('Nuevo registro', 'New record'))}</button>
+            <button type="button" class="btn" data-overview-action="property">${escapeHtml(tr('Añadir propiedad', 'Add property'))}</button>
+            <button type="button" class="btn" data-overview-action="view">${escapeHtml(tr('Nueva vista', 'New view'))}</button>
+            <button type="button" class="btn" data-overview-action="export">${escapeHtml(tr('Exportar', 'Export'))}</button>
+          </div>
+        </div>
+        <div class="db-overview-stats">
+          <div class="db-overview-stat"><strong>${Number(STATE.totalDatabaseRecords || 0).toLocaleString()}</strong><span>${escapeHtml(tr('Registros', 'Records'))}</span></div>
+          <div class="db-overview-stat"><strong>${Number(db.properties?.length || 0).toLocaleString()}</strong><span>${escapeHtml(tr('Propiedades', 'Properties'))}</span></div>
+          <div class="db-overview-stat"><strong>${Number(db.views?.length || 0).toLocaleString()}</strong><span>${escapeHtml(tr('Vistas', 'Views'))}</span></div>
+          <div class="db-overview-stat"><strong>${Number(ctx.attachmentCount || 0).toLocaleString()}</strong><span>${escapeHtml(tr('Adjuntos', 'Attachments'))}</span></div>
+        </div>
+      </section>
+
+      <section class="db-overview-card">
+        <div class="db-overview-head">
+          <div>
+            <strong>${escapeHtml(tr('Últimos cambios', 'Latest changes'))}</strong>
+            <span>${escapeHtml(tr('Actividad reciente en esta base', 'Recent activity in this database'))}</span>
+          </div>
+        </div>
+        <div class="db-overview-list">
+          ${activityItems.length
+            ? activityItems.map(item => `
+              <div class="db-overview-list-item">
+                <strong>${escapeHtml(item.summary || tr('Cambio registrado', 'Change logged'))}</strong>
+                <span>${escapeHtml(formatRelativeTime(item.createdAt || ''))}</span>
+              </div>
+            `).join('')
+            : `<div class="db-overview-empty">${escapeHtml(tr('Todavía no hay actividad reciente.', 'No recent activity yet.'))}</div>`}
+        </div>
+      </section>
+
+      <section class="db-overview-card">
+        <div class="db-overview-head">
+          <div>
+            <strong>${escapeHtml(tr('Adjuntos recientes', 'Recent attachments'))}</strong>
+            <span>${escapeHtml(tr('Últimos archivos incorporados a la base', 'Latest files added to the database'))}</span>
+          </div>
+        </div>
+        <div class="db-overview-list">
+          ${attachmentItems.length
+            ? attachmentItems.map(item => `
+              <button type="button" class="db-overview-attachment" data-attachment-url="${escapeHtml(item.url)}">
+                <strong>${escapeHtml(item.file_name || tr('Archivo', 'File'))}</strong>
+                <span>${escapeHtml(formatFileSize(item.size_bytes))} · ${escapeHtml(formatRelativeTime(item.created_at || item.createdAt || ''))}</span>
+              </button>
+            `).join('')
+            : `<div class="db-overview-empty">${escapeHtml(tr('No hay adjuntos recientes.', 'No recent attachments.'))}</div>`}
+        </div>
+      </section>
+
+      <section class="db-overview-card">
+        <div class="db-overview-head">
+          <div>
+            <strong>${escapeHtml(tr('Vistas favoritas', 'Favorite views'))}</strong>
+            <span>${escapeHtml(tr('Accesos directos para cambiar de lectura', 'Quick switches between readings'))}</span>
+          </div>
+        </div>
+        <div class="db-overview-chip-list">
+          ${favoriteViews.map(view => `
+            <button type="button" class="db-overview-chip ${STATE.activeViewId === view.id ? 'active' : ''}" data-switch-view-id="${view.id}">
+              ${iconForView(view.type)}
+              <span>${escapeHtml(view.name)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </section>
+
+      <section class="db-overview-card">
+        <div class="db-overview-head">
+          <div>
+            <strong>${escapeHtml(tr('Propiedades principales', 'Main properties'))}</strong>
+            <span>${escapeHtml(tr('Las columnas clave visibles ahora mismo', 'Key columns currently visible'))}</span>
+          </div>
+        </div>
+        <div class="db-overview-chip-list">
+          ${mainProperties.length
+            ? mainProperties.map(prop => `<span class="db-overview-chip is-static">${escapeHtml(prop.name)}</span>`).join('')
+            : `<div class="db-overview-empty">${escapeHtml(tr('Añade propiedades para estructurar mejor esta base.', 'Add properties to structure this database.'))}</div>`}
+        </div>
+      </section>
+
+      <section class="db-overview-card">
+        <div class="db-overview-head">
+          <div>
+            <strong>${escapeHtml(tr('Salud e integridad', 'Health and integrity'))}</strong>
+            <span>${escapeHtml(tr('Alertas rápidas antes de editar o automatizar', 'Quick alerts before editing or automating'))}</span>
+          </div>
+        </div>
+        <div class="db-overview-list">
+          ${relationWarnings.length
+            ? relationWarnings.slice(0, 4).map(item => `
+              <div class="db-overview-list-item is-warning">
+                <strong>${escapeHtml(item.propertyName || tr('Relación', 'Relation'))}</strong>
+                <span>${escapeHtml(item.reason || tr('Configuración a revisar', 'Configuration to review'))}</span>
+              </div>
+            `).join('')
+            : `<div class="db-overview-list-item is-good"><strong>${escapeHtml(tr('Sin relaciones rotas', 'No broken relations'))}</strong><span>${escapeHtml(tr('La estructura principal está consistente.', 'Core structure looks consistent.'))}</span></div>`}
+        </div>
+      </section>
+    </div>
+  `;
+
+  [...host.querySelectorAll('[data-overview-action]')].forEach(button => {
+    button.addEventListener('click', () => {
+      const action = button.getAttribute('data-overview-action') || '';
+      if (action === 'record') createEmptyRecord();
+      if (action === 'property') openCreatePropertyModal();
+      if (action === 'view') openCreateViewModal();
+      if (action === 'export') openExportDbModal();
+    });
+  });
+
+  [...host.querySelectorAll('[data-switch-view-id]')].forEach(button => {
+    button.addEventListener('click', async () => {
+      const viewId = Number(button.getAttribute('data-switch-view-id') || 0);
+      if (!viewId) return;
+      STATE.activeViewId = viewId;
+      applyCriteriaFromActiveView();
+      renderViewTabs();
+      renderFilters();
+      renderViewMeta();
+      await loadRecords();
+    });
+  });
+
+  [...host.querySelectorAll('[data-attachment-url]')].forEach(button => {
+    button.addEventListener('click', () => {
+      const url = button.getAttribute('data-attachment-url') || '';
+      if (!url) return;
+      if (isImageAttachment(url)) {
+        openImagePreviewModal(url);
+      } else {
+        confirmAttachmentDownload(url);
+      }
+    });
+  });
+}
+
+function renderViewMeta() {
+  const host = document.getElementById('viewMeta');
+  const view = getActiveView();
+  if (!host || !view) {
+    if (host) host.innerHTML = '';
+    return;
+  }
+
+  const descriptor = viewDescriptor(view.type);
+  const feedback = STATE.viewLoading
+    ? { kind: 'loading', message: STATE.viewLoadingMessage || tr('Actualizando vista…', 'Refreshing view…') }
+    : STATE.lastFeedback;
+  const feedbackClass = feedback?.kind ? `is-${feedback.kind}` : '';
+
+  host.innerHTML = `
+    <div class="view-meta-copy">
+      <span class="view-meta-kicker">${escapeHtml(descriptor.title)}</span>
+      <strong>${escapeHtml(view.name)}</strong>
+      <p>${escapeHtml(descriptor.description)}</p>
+    </div>
+    <div class="view-meta-side">
+      <div class="view-meta-counts">
+        <span>${escapeHtml(tr(`Misma base, ${Number(STATE.totalRecords || 0).toLocaleString()} registros en esta lectura`, `Same base, ${Number(STATE.totalRecords || 0).toLocaleString()} records in this lens`))}</span>
+      </div>
+      <div class="view-meta-actions">
+        <button type="button" class="btn ${isFavoriteView(view) ? 'btn-primary' : ''}" id="btnToggleFavoriteView">${escapeHtml(isFavoriteView(view) ? tr('Quitar favorita', 'Unfavorite') : tr('Marcar favorita', 'Favorite view'))}</button>
+        ${feedback?.message ? `<span class="view-meta-feedback ${feedbackClass}">${escapeHtml(feedback.message)}</span>` : ''}
+      </div>
+    </div>
+  `;
+
+  const favoriteBtn = host.querySelector('#btnToggleFavoriteView');
+  favoriteBtn?.addEventListener('click', () => {
+    toggleFavoriteView(view).catch(error => console.error('No se pudo actualizar la vista favorita', error));
+  });
 }
 
 function renderViewTabs() {
@@ -1296,6 +2165,13 @@ function renderViewTabs() {
     tabBtn.className = 'db-view-tab-main';
     tabBtn.innerHTML = `${iconForView(view.type)} <span>${escapeHtml(view.name)}</span>`;
 
+    const favoriteBtn = document.createElement('button');
+    favoriteBtn.type = 'button';
+    favoriteBtn.className = `db-view-tab-favorite ${isFavoriteView(view) ? 'active' : ''}`;
+    favoriteBtn.setAttribute('aria-label', escapeHtml(isFavoriteView(view) ? tr('Quitar favorita', 'Unfavorite') : tr('Marcar favorita', 'Favorite view')));
+    favoriteBtn.setAttribute('title', escapeHtml(isFavoriteView(view) ? tr('Quitar favorita', 'Unfavorite') : tr('Marcar favorita', 'Favorite view')));
+    favoriteBtn.textContent = '★';
+
     const menuBtn = document.createElement('button');
     menuBtn.type = 'button';
     menuBtn.className = 'header-cell-menu-btn db-view-tab-menu-btn';
@@ -1309,7 +2185,13 @@ function renderViewTabs() {
       applyCriteriaFromActiveView();
       renderViewTabs();
       renderFilters();
+      renderViewMeta();
       await loadRecords();
+    });
+
+    favoriteBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      toggleFavoriteView(view).catch(error => console.error('No se pudo actualizar la vista favorita', error));
     });
 
     menuBtn.addEventListener('click', event => {
@@ -1361,6 +2243,7 @@ function renderViewTabs() {
     });
 
     tabItem.appendChild(tabBtn);
+    tabItem.appendChild(favoriteBtn);
     tabItem.appendChild(menuBtn);
     tabs.appendChild(tabItem);
   });
@@ -1406,6 +2289,7 @@ function openViewHeaderMenu(view, anchorEl) {
   menu.className = 'property-menu';
 
   const items = [
+    { key: 'favorite', label: isFavoriteView(view) ? tr('Quitar favorita', 'Unfavorite') : tr('Marcar favorita', 'Favorite view'), iconName: 'star' },
     { key: 'rename', label: tr('Renombrar', 'Rename'), iconName: 'edit' },
     { key: 'edit', label: tr('Editar vista', 'Edit view'), iconName: 'swap' },
     { key: 'duplicate', label: tr('Duplicar vista', 'Duplicate view'), iconName: 'copy' },
@@ -1420,6 +2304,7 @@ function openViewHeaderMenu(view, anchorEl) {
     btn.addEventListener('click', async event => {
       event.stopPropagation();
       closeViewHeaderMenu();
+      if (item.key === 'favorite') await toggleFavoriteView(view);
       if (item.key === 'rename') await openRenameViewModal(view);
       if (item.key === 'edit') await openEditViewModal(view);
       if (item.key === 'duplicate') await duplicateView(view);
@@ -1453,7 +2338,35 @@ async function refreshViews(activeViewId = STATE.activeViewId) {
   applyCriteriaFromActiveView();
   renderViewTabs();
   renderFilters();
+  renderViewMeta();
   await loadRecords();
+}
+
+async function toggleFavoriteView(view) {
+  if (!view) return;
+  const nextFavorite = !isFavoriteView(view);
+  await api(`/api/views/${view.id}`, {
+    method: 'PUT',
+    body: {
+      config: {
+        ...(view.config || {}),
+        favorite: nextFavorite,
+      },
+    },
+  });
+
+  const current = STATE.selectedDatabase?.views?.find(item => item.id === view.id);
+  if (current) current.config = { ...(current.config || {}), favorite: nextFavorite };
+  await loadDatabaseContext();
+  renderViewTabs();
+  renderViewMeta();
+  renderDatabaseOverview();
+  showToast(
+    nextFavorite
+      ? tr('Vista guardada como favorita', 'View saved as favorite')
+      : tr('Vista eliminada de favoritas', 'View removed from favorites'),
+    'success',
+  );
 }
 
 async function openRenameViewModal(view) {
@@ -1584,11 +2497,12 @@ function iconForView(type) {
 
 async function loadRecords() {
   if (!STATE.selectedDatabaseId) return;
+  const effectivePageSize = STATE.groupByPropertyId ? Math.max(STATE.pageSize, 500) : STATE.pageSize;
   const params = new URLSearchParams({
     page: String(STATE.page),
-    pageSize: String(STATE.pageSize),
+    pageSize: String(effectivePageSize),
     search: STATE.search,
-    filters: JSON.stringify(STATE.filters),
+    filters: JSON.stringify(currentFiltersPayload()),
     sorts: JSON.stringify(STATE.sorts || []),
   });
 
@@ -1597,15 +2511,23 @@ async function loadRecords() {
     params.set('sortDir', STATE.sorts[0].dir);
   }
 
-  const response = await api(`/api/databases/${STATE.selectedDatabaseId}/records?${params.toString()}`);
-  STATE.records = response.data;
-  STATE.totalRecords = response.total;
-  STATE.totalDatabaseRecords = response.totalAll ?? response.total;
-  STATE.selectedDatabase.properties = response.properties;
-  STATE.selectedRecordIds = STATE.selectedRecordIds.filter(id => STATE.records.some(record => record.id === id));
+  setViewLoading(true, tr('Actualizando vista…', 'Refreshing view…'));
+  try {
+    const response = await api(`/api/databases/${STATE.selectedDatabaseId}/records?${params.toString()}`);
+    STATE.records = response.data;
+    STATE.totalRecords = response.total;
+    STATE.totalDatabaseRecords = response.totalAll ?? response.total;
+    STATE.selectedDatabase.properties = response.properties;
+    STATE.selectedRecordIds = STATE.selectedRecordIds.filter(id => STATE.records.some(record => record.id === id));
 
-  renderDatabaseHeader();
-  renderActiveView();
+    await loadDatabaseContext();
+    renderDatabaseHeader();
+    renderDatabaseOverview();
+    renderViewMeta();
+    renderActiveView();
+  } finally {
+    setViewLoading(false);
+  }
 }
 
 function renderActiveView() {
@@ -1648,6 +2570,8 @@ function visibleProperties() {
 function renderTableView(host) {
   const wrap = document.createElement('div');
   wrap.className = 'table-wrap';
+  const groupProp = activeGroupProperty();
+  const groupedRecords = groupRecordsByProperty(STATE.records, groupProp);
 
   const table = document.createElement('table');
   const thead = document.createElement('thead');
@@ -1726,60 +2650,72 @@ function renderTableView(host) {
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
+  let rowIndex = 0;
+  groupedRecords.forEach(group => {
+    if (groupProp) {
+      const groupRow = document.createElement('tr');
+      groupRow.className = 'table-group-row';
+      groupRow.innerHTML = `<td colspan="${shownProps.length + 3}">${escapeHtml(group.label)} <span class="count">(${group.records.length})</span></td>`;
+      tbody.appendChild(groupRow);
+    }
 
-  STATE.records.forEach((record, idx) => {
-    const tr = document.createElement('tr');
-    if (selectedIds.has(record.id)) tr.classList.add('table-row-selected');
-    const selectTd = document.createElement('td');
-    selectTd.className = 'select-col';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = selectedIds.has(record.id);
-    checkbox.addEventListener('change', () => {
-      const set = new Set(STATE.selectedRecordIds);
-      if (checkbox.checked) set.add(record.id);
-      else set.delete(record.id);
-      STATE.selectedRecordIds = [...set];
-      renderActiveView();
+    group.records.forEach(record => {
+      rowIndex += 1;
+      const tr = document.createElement('tr');
+      if (selectedIds.has(record.id)) tr.classList.add('table-row-selected');
+      const selectTd = document.createElement('td');
+      selectTd.className = 'select-col';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selectedIds.has(record.id);
+      checkbox.addEventListener('change', () => {
+        const set = new Set(STATE.selectedRecordIds);
+        if (checkbox.checked) set.add(record.id);
+        else set.delete(record.id);
+        STATE.selectedRecordIds = [...set];
+        renderActiveView();
+      });
+      selectTd.appendChild(checkbox);
+      tr.appendChild(selectTd);
+
+      const order = document.createElement('td');
+      order.textContent = String((STATE.page - 1) * STATE.pageSize + rowIndex);
+      tr.appendChild(order);
+
+      shownProps.forEach(prop => {
+        const td = document.createElement('td');
+        td.className = 'inline-cell';
+        td.setAttribute('data-property-id', String(prop.id));
+        td.appendChild(renderInlineCellInput({
+          prop,
+          value: record.values[prop.key],
+          recordId: record.id,
+          record,
+          attachments: record.attachments?.[prop.id] || [],
+          isDraft: false,
+          onCommit: async (nextValue) => {
+            await saveInlineValue(record.id, prop, nextValue);
+          },
+        }));
+        tr.appendChild(td);
+      });
+
+      const actions = document.createElement('td');
+      actions.innerHTML = `<button class="btn btn-danger btn-icon table-trash-btn" title="Eliminar" aria-label="Eliminar">${icon('trash')}</button>`;
+      const [btnDelete] = actions.querySelectorAll('button');
+      btnDelete.addEventListener('click', async () => {
+        openDeleteRecordsModal([record.id]);
+      });
+      tr.appendChild(actions);
+
+      tr.addEventListener('click', event => {
+        if (shouldIgnoreRowBackgroundClick(event.target)) return;
+        if (window.getSelection && window.getSelection().toString()) return;
+        openRecordModal(record);
+      });
+
+      tbody.appendChild(tr);
     });
-    selectTd.appendChild(checkbox);
-    tr.appendChild(selectTd);
-
-    const order = document.createElement('td');
-    order.textContent = String((STATE.page - 1) * STATE.pageSize + idx + 1);
-    tr.appendChild(order);
-
-    shownProps.forEach(prop => {
-      const td = document.createElement('td');
-      td.className = 'inline-cell';
-      td.setAttribute('data-property-id', String(prop.id));
-      td.appendChild(renderInlineCellInput({
-        prop,
-        value: record.values[prop.key],
-        recordId: record.id,
-        isDraft: false,
-        onCommit: async (nextValue) => {
-          await saveInlineValue(record.id, prop, nextValue);
-        },
-      }));
-      tr.appendChild(td);
-    });
-
-    const actions = document.createElement('td');
-    actions.innerHTML = `<button class="btn btn-danger btn-icon table-trash-btn" title="Eliminar" aria-label="Eliminar">${icon('trash')}</button>`;
-    const [btnDelete] = actions.querySelectorAll('button');
-    btnDelete.addEventListener('click', async () => {
-      openDeleteRecordsModal([record.id]);
-    });
-    tr.appendChild(actions);
-
-    tr.addEventListener('click', event => {
-      if (shouldIgnoreRowBackgroundClick(event.target)) return;
-      if (window.getSelection && window.getSelection().toString()) return;
-      openRecordModal(record);
-    });
-
-    tbody.appendChild(tr);
   });
 
   const draftRow = document.createElement('tr');
@@ -1799,6 +2735,8 @@ function renderTableView(host) {
       prop,
       value: null,
       recordId: null,
+      record: null,
+      attachments: [],
       isDraft: true,
       onCommit: async (nextValue) => {
         const payload = {};
@@ -1841,11 +2779,13 @@ function renderTableView(host) {
   const info = document.createElement('span');
   info.className = 'count';
   info.style.margin = '8px 0 0 4px';
-  info.textContent = t('pageOf', {
-    page: STATE.page,
-    totalPages,
-    total: STATE.totalRecords.toLocaleString(),
-  });
+  info.textContent = groupProp
+    ? tr(`Agrupado por ${groupProp.name} · ${STATE.totalRecords.toLocaleString()} registros`, `Grouped by ${groupProp.name} · ${STATE.totalRecords.toLocaleString()} records`)
+    : t('pageOf', {
+      page: STATE.page,
+      totalPages,
+      total: STATE.totalRecords.toLocaleString(),
+    });
 
   const deleteSelected = document.createElement('button');
   deleteSelected.className = 'btn btn-danger btn-icon table-trash-btn';
@@ -1857,8 +2797,10 @@ function renderTableView(host) {
     openDeleteRecordsModal(STATE.selectedRecordIds);
   });
 
-  pagination.appendChild(prev);
-  pagination.appendChild(next);
+  if (!groupProp) {
+    pagination.appendChild(prev);
+    pagination.appendChild(next);
+  }
   pagination.appendChild(deleteSelected);
   pagination.appendChild(info);
 
@@ -1957,22 +2899,31 @@ async function saveInlineValue(recordId, prop, nextValue) {
   });
   await loadRecords();
   await refreshBootstrap();
+  setLastFeedback('success', tr('Guardado automático', 'Autosaved'));
 }
 
-async function uploadAttachment(recordId, propertyId, file) {
-  if (!recordId || !propertyId || !file) return;
+async function uploadAttachments(recordId, propertyId, files) {
+  const list = [...(files || [])];
+  if (!recordId || !propertyId || !list.length) return;
   const form = new FormData();
-  form.append('file', file);
+  list.forEach(file => form.append('files', file));
   const response = await fetch(`/api/records/${recordId}/attachments/${propertyId}`, { method: 'POST', body: form });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = payload.error || tr('No se pudo adjuntar el archivo', 'Could not attach the file');
-    openConfirmMini({ message, confirmText: 'OK' });
+    showToast(message, 'error', 3600);
+    setLastFeedback('error', message, { timeoutMs: 3600 });
     throw new Error(message);
   }
+  const successMessage = list.length === 1
+    ? tr('Subida completada', 'Upload completed')
+    : tr(`${list.length} archivos subidos`, `${list.length} files uploaded`);
+  showToast(successMessage, 'success');
+  setLastFeedback('success', successMessage);
+  return payload;
 }
 
-function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
+function renderInlineCellInput({ prop, value, recordId, record = null, attachments = [], isDraft, onCommit }) {
   if (prop.type === 'autoId' || prop.type === 'rollup' || prop.type === 'relation') {
     return renderCellValue(prop, value);
   }
@@ -1983,7 +2934,7 @@ function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
 
     const input = document.createElement('input');
     input.type = 'file';
-    input.multiple = false;
+    input.multiple = true;
     input.className = 'hidden';
 
     const files = Array.isArray(value) ? value : [];
@@ -2017,7 +2968,16 @@ function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
 
         previewBtn.addEventListener('click', event => {
           event.stopPropagation();
-          if (isImageAttachment(fileUrl)) {
+          if (recordId && attachments.length) {
+            openAttachmentBrowser({
+              recordId,
+              record,
+              propertyId: prop.id,
+              attachments,
+              initialUrl: fileUrl,
+              title: prop.name,
+            });
+          } else if (isImageAttachment(fileUrl)) {
             openImagePreviewModal(fileUrl, fileName);
           } else {
             confirmAttachmentDownload(fileUrl);
@@ -2064,21 +3024,36 @@ function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
 
     wrap.appendChild(list);
 
-    /* Only show upload trigger if no files attached */
-    if (!hasFiles) {
-      const uploadTrigger = document.createElement('button');
-      uploadTrigger.type = 'button';
-      uploadTrigger.className = 'attachment-upload-trigger';
-      uploadTrigger.textContent = '+';
-      uploadTrigger.title = tr('Adjuntar archivo', 'Attach file');
-      uploadTrigger.setAttribute('aria-label', tr('Adjuntar archivo', 'Attach file'));
+    const uploadTrigger = document.createElement('button');
+    uploadTrigger.type = 'button';
+    uploadTrigger.className = 'attachment-upload-trigger';
+    uploadTrigger.textContent = '+';
+    uploadTrigger.title = tr('Adjuntar archivos', 'Attach files');
+    uploadTrigger.setAttribute('aria-label', tr('Adjuntar archivos', 'Attach files'));
 
-      uploadTrigger.addEventListener('click', event => {
+    uploadTrigger.addEventListener('click', event => {
+      event.stopPropagation();
+      input.click();
+    });
+
+    wrap.appendChild(uploadTrigger);
+
+    if (recordId && attachments.length) {
+      const manageBtn = document.createElement('button');
+      manageBtn.type = 'button';
+      manageBtn.className = 'attachment-browse-trigger';
+      manageBtn.textContent = tr('Ver archivos', 'Browse files');
+      manageBtn.addEventListener('click', event => {
         event.stopPropagation();
-        input.click();
+        openAttachmentBrowser({
+          recordId,
+          record,
+          propertyId: prop.id,
+          attachments,
+          title: prop.name,
+        });
       });
-
-      wrap.appendChild(uploadTrigger);
+      wrap.appendChild(manageBtn);
     }
 
     wrap.appendChild(input);
@@ -2098,9 +3073,7 @@ function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
 
       wrap.classList.add('is-uploading');
       try {
-        for (const file of list) {
-          await uploadAttachment(targetRecordId, prop.id, file);
-        }
+        await uploadAttachments(targetRecordId, prop.id, list);
         await loadRecords();
         await refreshBootstrap();
       } finally {
@@ -2114,7 +3087,6 @@ function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
     });
 
     wrap.addEventListener('dragover', event => {
-      if (hasFiles) return;
       event.preventDefault();
       wrap.classList.add('is-dragover');
     });
@@ -2122,12 +3094,10 @@ function renderInlineCellInput({ prop, value, recordId, isDraft, onCommit }) {
       wrap.classList.remove('is-dragover');
     });
     wrap.addEventListener('drop', async event => {
-      if (hasFiles) return;
       event.preventDefault();
       wrap.classList.remove('is-dragover');
       const dropped = event.dataTransfer?.files || [];
-      /* Only take the first file */
-      if (dropped.length) await processFiles([dropped[0]]);
+      if (dropped.length) await processFiles(dropped);
     });
 
     return wrap;
@@ -2674,6 +3644,8 @@ async function createEmptyRecord() {
   await api(`/api/databases/${STATE.selectedDatabaseId}/records`, { method: 'POST', body: { values: {} } });
   await loadRecords();
   await refreshBootstrap();
+  showToast(tr('Registro creado', 'Record created'), 'success');
+  setLastFeedback('success', tr('Nuevo registro listo para editar', 'New record ready to edit'));
 }
 
 function cellHeader(label, prop) {
@@ -2894,12 +3866,12 @@ function renderCellValue(prop, value) {
 }
 
 function renderGalleryView(host) {
-  const grid = document.createElement('div');
-  grid.className = 'gallery-grid';
+  const groupProp = activeGroupProperty();
+  const grouped = groupRecordsByProperty(STATE.records, groupProp);
 
   const attachmentProperty = visibleProperties().find(prop => prop.type === 'attachment') || STATE.selectedDatabase.properties.find(prop => prop.type === 'attachment');
 
-  STATE.records.forEach(record => {
+  function buildGalleryCard(record) {
     const card = document.createElement('article');
     card.className = 'gallery-card';
 
@@ -2928,10 +3900,152 @@ function renderGalleryView(host) {
     card.appendChild(thumb);
     card.appendChild(body);
     card.addEventListener('click', () => openRecordModal(record));
-    grid.appendChild(card);
+    return card;
+  }
+
+  if (!groupProp) {
+    const grid = document.createElement('div');
+    grid.className = 'gallery-grid';
+    grouped[0]?.records?.forEach(record => {
+      grid.appendChild(buildGalleryCard(record));
+    });
+    host.appendChild(grid);
+    return;
+  }
+
+  grouped.forEach(group => {
+    const section = document.createElement('section');
+    section.className = 'group-section';
+    const heading = document.createElement('div');
+    heading.className = 'group-section-head';
+    heading.innerHTML = `<strong>${escapeHtml(group.label)}</strong><span class="count">${group.records.length}</span>`;
+    section.appendChild(heading);
+    const grid = document.createElement('div');
+    grid.className = 'gallery-grid';
+    group.records.forEach(record => {
+      grid.appendChild(buildGalleryCard(record));
+    });
+    section.appendChild(grid);
+    host.appendChild(section);
+  });
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? '');
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadTextFile(filename, text, mimeType = 'text/plain;charset=utf-8') {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 300);
+}
+
+function buildAnalysisExport(view, result) {
+  const sections = [];
+  sections.push(['section', 'label', 'value']);
+  sections.push(['summary', 'records', result?.insights?.totalRecords ?? 0]);
+
+  if (result?.insights?.categoryCounts?.items?.length) {
+    sections.push([]);
+    sections.push(['category_counts', 'label', 'count']);
+    result.insights.categoryCounts.items.forEach(item => sections.push(['category_counts', item.label, item.count]));
+  }
+
+  if (result?.insights?.distribution?.buckets?.length) {
+    sections.push([]);
+    sections.push(['distribution', 'bucket', 'count']);
+    result.insights.distribution.buckets.forEach(item => sections.push(['distribution', item.label, item.count]));
+  }
+
+  if (result?.insights?.nullsByField?.length) {
+    sections.push([]);
+    sections.push(['nulls', 'field', 'null_count', 'fill_rate']);
+    result.insights.nullsByField.forEach(item => sections.push(['nulls', item.propertyName, item.nullCount, item.fillRate]));
+  }
+
+  if (result?.insights?.tagFrequencies?.items?.length) {
+    sections.push([]);
+    sections.push(['frequencies', 'label', 'count']);
+    result.insights.tagFrequencies.items.forEach(item => sections.push(['frequencies', item.label, item.count]));
+  }
+
+  if (result?.insights?.timeline?.points?.length) {
+    sections.push([]);
+    sections.push(['timeline', 'period', 'count']);
+    result.insights.timeline.points.forEach(item => sections.push(['timeline', item.label, item.count]));
+  }
+
+  return sections.map(row => row.map(escapeCsvCell).join(',')).join('\n');
+}
+
+function renderInsightTableSection(host, title, columns, rows) {
+  if (!host || !rows?.length) return;
+  const section = document.createElement('section');
+  section.className = 'analysis-section';
+  const heading = document.createElement('div');
+  heading.className = 'group-section-head';
+  heading.innerHTML = `<strong>${escapeHtml(title)}</strong><span class="count">${rows.length}</span>`;
+  section.appendChild(heading);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  columns.forEach(column => {
+    const th = document.createElement('th');
+    th.textContent = column;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    row.forEach(cell => {
+      const td = document.createElement('td');
+      td.textContent = String(cell ?? '');
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  section.appendChild(wrap);
+  host.appendChild(section);
+}
+
+async function runAnalysisForView(view, nextCfg, { persist = true } = {}) {
+  if (!view) return null;
+
+  if (persist) {
+    await api(`/api/views/${view.id}`, { method: 'PUT', body: { config: nextCfg, name: nextCfg.title || view.name } });
+    view.config = nextCfg;
+    view.name = nextCfg.title || view.name;
+    renderViewTabs();
+  }
+
+  const result = await api(`/api/databases/${STATE.selectedDatabaseId}/analysis`, {
+    method: 'POST',
+    body: {
+      ...nextCfg,
+      filters: currentFiltersPayload(),
+      search: STATE.search,
+      sorts: STATE.sorts || [],
+    },
   });
 
-  host.appendChild(grid);
+  view._lastAnalysisResult = result;
+  renderAnalysisOutput(view.id, nextCfg, result);
+  return result;
 }
 
 function renderAnalysisView(host, view) {
@@ -2954,7 +4068,7 @@ function renderAnalysisView(host, view) {
         </select>
       </label>
       <label>${escapeHtml(tr('Propiedad X', 'Property X'))}
-        <select id="ana-x-${view.id}">${propertySelectOptions(props, cfg.xPropertyId)}</select>
+        <select id="ana-x-${view.id}">${propertySelectOptions(props, cfg.xPropertyId, { includeBlank: true, blankLabel: tr('(selecciona)', '(select)') })}</select>
       </label>
       <label>${escapeHtml(tr('Propiedad Y (numérica)', 'Property Y (numeric)'))}
         <select id="ana-y-${view.id}"><option value="">${escapeHtml(tr('(conteo)', '(count)'))}</option>${propertySelectOptions(props, cfg.yPropertyId)}</select>
@@ -2968,26 +4082,44 @@ function renderAnalysisView(host, view) {
           <option value="min">${escapeHtml(tr('Mínimo', 'Minimum'))}</option>
         </select>
       </label>
+      <label>${escapeHtml(tr('Distribución de valores', 'Value distribution'))}
+        <select id="ana-dist-${view.id}">${propertySelectOptions(props, cfg.distributionPropertyId, { includeBlank: true, blankLabel: tr('(auto)', '(auto)') })}</select>
+      </label>
+      <label>${escapeHtml(tr('Frecuencia de etiquetas', 'Tag frequency'))}
+        <select id="ana-freq-${view.id}">${propertySelectOptions(props, cfg.frequencyPropertyId, { includeBlank: true, blankLabel: tr('(auto)', '(auto)') })}</select>
+      </label>
+      <label>${escapeHtml(tr('Evolución temporal', 'Timeline'))}
+        <select id="ana-time-${view.id}">${propertySelectOptions(props, cfg.timelinePropertyId, { includeBlank: true, blankLabel: tr('(auto)', '(auto)') })}</select>
+      </label>
+      <label>${escapeHtml(tr('Intervalo temporal', 'Timeline interval'))}
+        <select id="ana-time-interval-${view.id}">
+          <option value="month">${escapeHtml(tr('Mes', 'Month'))}</option>
+          <option value="day">${escapeHtml(tr('Día', 'Day'))}</option>
+        </select>
+      </label>
       <label>${escapeHtml(tr('Chi-cuadrado A', 'Chi-square A'))}
         <select id="ana-chi-a-${view.id}"><option value="">${escapeHtml(tr('(sin prueba)', '(no test)'))}</option>${propertySelectOptions(props, cfg.chiAPropertyId)}</select>
       </label>
       <label>${escapeHtml(tr('Chi-cuadrado B', 'Chi-square B'))}
         <select id="ana-chi-b-${view.id}"><option value="">${escapeHtml(tr('(sin prueba)', '(no test)'))}</option>${propertySelectOptions(props, cfg.chiBPropertyId)}</select>
       </label>
-      <div style="display:flex;align-items:flex-end;gap:8px;">
+      <div class="analysis-actions">
         <button class="btn btn-primary" id="ana-run-${view.id}">${escapeHtml(tr('Actualizar análisis', 'Update analysis'))}</button>
+        <button class="btn" id="ana-export-${view.id}">${escapeHtml(tr('Exportar resultados', 'Export results'))}</button>
       </div>
     </div>
     <div id="ana-heatmap-${view.id}"></div>
     <canvas id="ana-chart-${view.id}" class="analysis-chart-canvas" height="320" style="display:none;"></canvas>
     <div id="ana-empty-${view.id}" class="analysis-empty">${escapeHtml(tr('Ningún gráfico generado todavía. Pulsa “Actualizar análisis” para generarlo.', 'No chart generated yet. Click “Update analysis” to generate it.'))}</div>
     <div id="ana-chi-box-${view.id}" class="chi-box">${escapeHtml(tr('Sin prueba chi-cuadrado.', 'No chi-square test.'))}</div>
+    <div id="ana-insights-${view.id}" class="analysis-sections"></div>
   `;
 
   host.appendChild(card);
 
   document.getElementById(`ana-type-${view.id}`).value = cfg.chartType || 'bar';
   document.getElementById(`ana-agg-${view.id}`).value = cfg.aggregation || 'count';
+  document.getElementById(`ana-time-interval-${view.id}`).value = cfg.timelineInterval || 'month';
 
   document.getElementById(`ana-run-${view.id}`).addEventListener('click', async () => {
     const nextCfg = {
@@ -2996,22 +4128,30 @@ function renderAnalysisView(host, view) {
       xPropertyId: Number(document.getElementById(`ana-x-${view.id}`).value || 0),
       yPropertyId: Number(document.getElementById(`ana-y-${view.id}`).value || 0),
       aggregation: document.getElementById(`ana-agg-${view.id}`).value,
+      distributionPropertyId: Number(document.getElementById(`ana-dist-${view.id}`).value || 0),
+      frequencyPropertyId: Number(document.getElementById(`ana-freq-${view.id}`).value || 0),
+      timelinePropertyId: Number(document.getElementById(`ana-time-${view.id}`).value || 0),
+      timelineInterval: document.getElementById(`ana-time-interval-${view.id}`).value,
       chiAPropertyId: Number(document.getElementById(`ana-chi-a-${view.id}`).value || 0),
       chiBPropertyId: Number(document.getElementById(`ana-chi-b-${view.id}`).value || 0),
     };
 
-    await api(`/api/views/${view.id}`, { method: 'PUT', body: { config: nextCfg, name: nextCfg.title || view.name } });
-    view.config = nextCfg;
-    view.name = nextCfg.title || view.name;
-    renderViewTabs();
-
-    const result = await api(`/api/databases/${STATE.selectedDatabaseId}/analysis`, {
-      method: 'POST',
-      body: nextCfg,
-    });
-
-    renderAnalysisOutput(view.id, nextCfg, result);
+    await runAnalysisForView(view, nextCfg);
   });
+
+  document.getElementById(`ana-export-${view.id}`).addEventListener('click', async () => {
+    const result = view._lastAnalysisResult || await runAnalysisForView(view, {
+      ...(view.config || {}),
+      chartType: document.getElementById(`ana-type-${view.id}`).value,
+    }, { persist: false });
+    if (!result) return;
+    const safeName = String(view.name || 'analysis').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_') || 'analysis';
+    downloadTextFile(`${safeName}.csv`, buildAnalysisExport(view, result), 'text/csv;charset=utf-8');
+  });
+
+  if (cfg.xPropertyId || cfg.frequencyPropertyId || cfg.timelinePropertyId || cfg.distributionPropertyId) {
+    runAnalysisForView(view, cfg, { persist: false }).catch(() => {});
+  }
 }
 
 function renderAnalysisOutput(viewId, cfg, result) {
@@ -3019,10 +4159,12 @@ function renderAnalysisOutput(viewId, cfg, result) {
   const heatmapHost = document.getElementById(`ana-heatmap-${viewId}`);
   const chiBox = document.getElementById(`ana-chi-box-${viewId}`);
   const emptyBox = document.getElementById(`ana-empty-${viewId}`);
+  const insightsHost = document.getElementById(`ana-insights-${viewId}`);
 
   destroyChartInstance(viewId);
 
   heatmapHost.innerHTML = '';
+  if (insightsHost) insightsHost.innerHTML = '';
   if (emptyBox) emptyBox.style.display = 'none';
 
   if (cfg.chartType === 'heatmap') {
@@ -3074,28 +4216,113 @@ function renderAnalysisOutput(viewId, cfg, result) {
   } else {
     chiBox.textContent = tr('Sin prueba chi-cuadrado (selecciona propiedades categóricas A y B).', 'No chi-square test (select categorical properties A and B).');
   }
+
+  const insightCards = document.createElement('div');
+  insightCards.className = 'analysis-stat-strip';
+  insightCards.innerHTML = `
+    <div class="analysis-stat-card"><strong>${escapeHtml(String(result?.insights?.totalRecords ?? 0))}</strong><span>${escapeHtml(tr('Registros analizados', 'Analyzed records'))}</span></div>
+    <div class="analysis-stat-card"><strong>${escapeHtml(String(result?.insights?.nullsByField?.reduce((acc, item) => acc + Number(item.nullCount || 0), 0) || 0))}</strong><span>${escapeHtml(tr('Nulos detectados', 'Nulls detected'))}</span></div>
+    <div class="analysis-stat-card"><strong>${escapeHtml(String(result?.insights?.timeline?.points?.length || 0))}</strong><span>${escapeHtml(tr('Puntos temporales', 'Timeline points'))}</span></div>
+  `;
+  insightsHost?.appendChild(insightCards);
+
+  if (result?.insights?.distribution) {
+    const summary = document.createElement('div');
+    summary.className = 'chi-box';
+    summary.innerHTML = `
+      <strong>${escapeHtml(tr('Distribución', 'Distribution'))}: ${escapeHtml(result.insights.distribution.propertyName)}</strong><br />
+      min: ${escapeHtml(String(result.insights.distribution.summary.min))} ·
+      max: ${escapeHtml(String(result.insights.distribution.summary.max))} ·
+      avg: ${escapeHtml(String(result.insights.distribution.summary.avg))}
+    `;
+    insightsHost?.appendChild(summary);
+  }
+
+  renderInsightTableSection(
+    insightsHost,
+    tr('Conteos por categoría', 'Counts by category'),
+    [tr('Categoría', 'Category'), tr('Conteo', 'Count')],
+    (result?.insights?.categoryCounts?.items || []).map(item => [item.label, item.count]),
+  );
+  renderInsightTableSection(
+    insightsHost,
+    tr('Distribución de valores', 'Value distribution'),
+    [tr('Rango', 'Bucket'), tr('Conteo', 'Count')],
+    (result?.insights?.distribution?.buckets || []).map(item => [item.label, item.count]),
+  );
+  renderInsightTableSection(
+    insightsHost,
+    tr('Nulos por campo', 'Nulls by field'),
+    [tr('Campo', 'Field'), tr('Nulos', 'Nulls'), tr('Relleno %', 'Fill %')],
+    (result?.insights?.nullsByField || []).map(item => [item.propertyName, item.nullCount, item.fillRate]),
+  );
+  renderInsightTableSection(
+    insightsHost,
+    tr('Frecuencia de etiquetas', 'Tag frequency'),
+    [tr('Etiqueta', 'Tag'), tr('Frecuencia', 'Frequency')],
+    (result?.insights?.tagFrequencies?.items || []).map(item => [item.label, item.count]),
+  );
+  renderInsightTableSection(
+    insightsHost,
+    tr('Evolución temporal', 'Timeline'),
+    [tr('Periodo', 'Period'), tr('Conteo', 'Count')],
+    (result?.insights?.timeline?.points || []).map(item => [item.label, item.count]),
+  );
 }
 
 function renderFilters() {
   const host = document.getElementById('filters');
   host.innerHTML = '';
 
-  STATE.filters.forEach((filter, idx) => {
-    const prop = STATE.selectedDatabase.properties.find(item => item.id === filter.propertyId);
-    const op = FILTER_OPERATORS.find(item => item.value === filter.operator);
+  if (STATE.groupByPropertyId) {
+    const prop = STATE.selectedDatabase.properties.find(item => item.id === STATE.groupByPropertyId);
     const chip = document.createElement('div');
     chip.className = 'filter-chip';
     chip.innerHTML = `
-      <span>${icon('filter')}${escapeHtml(prop?.name || tr('Propiedad', 'Property'))} · ${escapeHtml(op ? filterLabel(op) : filter.operator)} · ${escapeHtml(String(filter.value || ''))}</span>
+      <span>${icon('group')}${escapeHtml(tr('Agrupar por', 'Group by'))} · ${escapeHtml(prop?.name || tr('Propiedad', 'Property'))}</span>
       <button class="btn">✕</button>
     `;
     chip.querySelector('button').addEventListener('click', async () => {
-      STATE.filters.splice(idx, 1);
+      STATE.groupByPropertyId = null;
+      STATE.page = 1;
       renderFilters();
       await persistActiveViewCriteria();
       await loadRecords();
     });
     host.appendChild(chip);
+  }
+
+  if (STATE.filterGroups.length > 1) {
+    const logicChip = document.createElement('div');
+    logicChip.className = 'filter-chip';
+    logicChip.innerHTML = `<span>${icon('filter')}${escapeHtml(tr('Grupos', 'Groups'))} · ${STATE.filterGroupOperator === 'or' ? 'OR' : 'AND'}</span>`;
+    host.appendChild(logicChip);
+  }
+
+  STATE.filterGroups.forEach((group, groupIndex) => {
+    group.rules.forEach((filter, ruleIndex) => {
+      const prop = STATE.selectedDatabase.properties.find(item => item.id === filter.propertyId);
+      const op = FILTER_OPERATORS.find(item => item.value === filter.operator);
+      const valueLabel = filter.operator === 'between'
+        ? `${filter.value || '…'} → ${filter.valueTo || '…'}`
+        : String(filter.value || '');
+      const chip = document.createElement('div');
+      chip.className = 'filter-chip';
+      chip.innerHTML = `
+        <span>${icon('filter')}G${groupIndex + 1} · ${group.logic === 'or' ? 'OR' : 'AND'} · ${escapeHtml(prop?.name || tr('Propiedad', 'Property'))} · ${escapeHtml(op ? filterLabel(op) : filter.operator)}${valueLabel ? ` · ${escapeHtml(valueLabel)}` : ''}</span>
+        <button class="btn">✕</button>
+      `;
+      chip.querySelector('button').addEventListener('click', async () => {
+        const targetGroup = STATE.filterGroups[groupIndex];
+        if (!targetGroup) return;
+        targetGroup.rules.splice(ruleIndex, 1);
+        STATE.filterGroups = STATE.filterGroups.filter(item => item.rules.length);
+        renderFilters();
+        await persistActiveViewCriteria();
+        await loadRecords();
+      });
+      host.appendChild(chip);
+    });
   });
 
   STATE.sorts.forEach((sort, idx) => {
@@ -3116,8 +4343,14 @@ function renderFilters() {
   });
 }
 
-function propertySelectOptions(properties, selectedId) {
-  return properties.map(prop => `<option value="${prop.id}" ${Number(selectedId) === prop.id ? 'selected' : ''}>${escapeHtml(prop.name)}</option>`).join('');
+function propertySelectOptions(properties, selectedId, { includeBlank = false, blankLabel = null } = {}) {
+  const items = [];
+  if (includeBlank) {
+    items.push(`<option value="">${escapeHtml(blankLabel || tr('Ninguna', 'None'))}</option>`);
+  }
+  return items.concat(
+    properties.map(prop => `<option value="${prop.id}" ${Number(selectedId) === prop.id ? 'selected' : ''}>${escapeHtml(prop.name)}</option>`),
+  ).join('');
 }
 
 function dirSelectOptions(selected) {
@@ -3135,12 +4368,14 @@ function advancedFilterPropertyById(propertyId) {
 function allowedFilterOperatorsForProperty(prop) {
   const type = String(prop?.type || 'text');
   if (type === 'checkbox') return ['checked', 'unchecked', 'isEmpty', 'isNotEmpty'];
-  if (type === 'date' || type === 'time') return ['equals', 'notEquals', 'before', 'after', 'isEmpty', 'isNotEmpty'];
+  if (type === 'attachment') return ['contains', 'notContains', 'isEmpty', 'isNotEmpty'];
+  if (type === 'date' || type === 'time') return ['equals', 'notEquals', 'before', 'after', 'between', 'isEmpty', 'isNotEmpty'];
   return ['contains', 'notContains', 'equals', 'notEquals', 'isEmpty', 'isNotEmpty'];
 }
 
-function buildAdvancedFilterValueControl(prop, operator, currentValue) {
+function buildAdvancedFilterValueControl(prop, operator, currentValue, currentValueTo = '') {
   const normalizedValue = currentValue === null || currentValue === undefined ? '' : String(currentValue);
+  const normalizedValueTo = currentValueTo === null || currentValueTo === undefined ? '' : String(currentValueTo);
   const noValueOperators = new Set(['isEmpty', 'isNotEmpty', 'checked', 'unchecked']);
   if (noValueOperators.has(String(operator || ''))) {
     return `<input data-role="value" value="" disabled placeholder="${escapeHtml(tr('(sin valor)', '(no value)'))}" />`;
@@ -3163,6 +4398,15 @@ function buildAdvancedFilterValueControl(prop, operator, currentValue) {
   }
 
   const inputType = prop?.type === 'date' ? 'date' : (prop?.type === 'time' ? 'time' : 'text');
+  if (String(operator || '') === 'between') {
+    return `
+      <span class="advanced-filter-range">
+        <input data-role="value" type="${inputType}" value="${escapeHtml(normalizedValue)}" />
+        <span>→</span>
+        <input data-role="value-to" type="${inputType}" value="${escapeHtml(normalizedValueTo)}" />
+      </span>
+    `;
+  }
   return `<input data-role="value" type="${inputType}" value="${escapeHtml(normalizedValue)}" />`;
 }
 
@@ -3171,6 +4415,7 @@ function syncAdvancedFilterRow(row, { preserveValue = true } = {}) {
   const operatorSelect = row.querySelector('[data-role="operator"]');
   const valueHost = row.querySelector('[data-role="value-host"]');
   const previousValue = preserveValue ? (row.querySelector('[data-role="value"]')?.value ?? '') : '';
+  const previousValueTo = preserveValue ? (row.querySelector('[data-role="value-to"]')?.value ?? '') : '';
 
   const prop = advancedFilterPropertyById(propertySelect?.value);
   const allowedOperators = allowedFilterOperatorsForProperty(prop);
@@ -3183,7 +4428,7 @@ function syncAdvancedFilterRow(row, { preserveValue = true } = {}) {
     .map(op => `<option value="${op.value}" ${op.value === nextOperator ? 'selected' : ''}>${filterLabel(op)}</option>`)
     .join('');
 
-  valueHost.innerHTML = buildAdvancedFilterValueControl(prop, nextOperator, previousValue);
+  valueHost.innerHTML = buildAdvancedFilterValueControl(prop, nextOperator, previousValue, previousValueTo);
 }
 
 function addAdvancedFilterRow(host, initial = {}) {
@@ -3209,9 +4454,58 @@ function addAdvancedFilterRow(host, initial = {}) {
   syncAdvancedFilterRow(row, { preserveValue: false });
   const initialValueInput = row.querySelector('[data-role="value"]');
   if (initialValueInput) initialValueInput.value = String(initial.value ?? '');
+  const initialValueToInput = row.querySelector('[data-role="value-to"]');
+  if (initialValueToInput) initialValueToInput.value = String(initial.valueTo ?? '');
 
   row.querySelector('[data-role="remove"]').addEventListener('click', () => row.remove());
   host.appendChild(row);
+}
+
+function addAdvancedFilterGroup(host, initial = {}, { presetPropertyId = null } = {}) {
+  const group = document.createElement('section');
+  group.className = 'advanced-filter-group';
+  group.innerHTML = `
+    <div class="advanced-filter-group-head">
+      <label>${escapeHtml(tr('Combinar reglas', 'Combine rules'))}
+        <select data-role="group-logic">
+          <option value="and">${escapeHtml(tr('AND (todas)', 'AND (all)'))}</option>
+          <option value="or">${escapeHtml(tr('OR (alguna)', 'OR (any)'))}</option>
+        </select>
+      </label>
+      <div class="advanced-filter-group-actions">
+        <button class="btn" type="button" data-role="add-rule">${escapeHtml(tr('+ Regla', '+ Rule'))}</button>
+        <button class="btn" type="button" data-role="remove-group">${icon('trash')}</button>
+      </div>
+    </div>
+    <div class="advanced-criteria-list" data-role="rules"></div>
+  `;
+
+  group.querySelector('[data-role="group-logic"]').value = initial.logic === 'or' ? 'or' : 'and';
+  const rulesHost = group.querySelector('[data-role="rules"]');
+  const rules = Array.isArray(initial.rules) && initial.rules.length
+    ? initial.rules
+    : [{
+      propertyId: presetPropertyId || STATE.selectedDatabase.properties[0]?.id,
+      operator: 'contains',
+      value: '',
+      valueTo: '',
+    }];
+  rules.forEach(rule => addAdvancedFilterRow(rulesHost, rule));
+
+  group.querySelector('[data-role="add-rule"]').addEventListener('click', () => {
+    addAdvancedFilterRow(rulesHost, {
+      propertyId: presetPropertyId || STATE.selectedDatabase.properties[0]?.id,
+      operator: 'contains',
+      value: '',
+      valueTo: '',
+    });
+  });
+
+  group.querySelector('[data-role="remove-group"]').addEventListener('click', () => {
+    group.remove();
+  });
+
+  host.appendChild(group);
 }
 
 function addAdvancedSortRow(host, initial = {}) {
@@ -3231,15 +4525,27 @@ function openAdvancedCriteriaModal({ focus = 'filter', presetPropertyId = null }
   if (!STATE.selectedDatabase) return;
 
   openModal({
-    title: tr('Filtros y ordenación avanzados', 'Advanced filters and sorting'),
+    title: tr('Filtros, orden y grupos', 'Filters, sorting, and groups'),
     submitText: tr('Aplicar', 'Apply'),
-    width: '1000px',
+    width: '1080px',
     content: `
       <div class="advanced-criteria-layout">
         <section class="advanced-criteria-col">
+          <h4>${escapeHtml(tr('Configuración de vista', 'View settings'))}</h4>
+          <label>${escapeHtml(tr('Combinar grupos', 'Combine groups'))}
+            <select id="advancedGroupLogic">
+              <option value="and">${escapeHtml(tr('AND (todas las condiciones)', 'AND (all conditions)'))}</option>
+              <option value="or">${escapeHtml(tr('OR (cualquier grupo)', 'OR (any group)'))}</option>
+            </select>
+          </label>
+          <label>${escapeHtml(tr('Agrupar por propiedad', 'Group by property'))}
+            <select id="advancedGroupBy">${propertySelectOptions(STATE.selectedDatabase.properties, STATE.groupByPropertyId, { includeBlank: true, blankLabel: tr('(sin agrupar)', '(no grouping)') })}</select>
+          </label>
+        </section>
+        <section class="advanced-criteria-col">
           <h4>${escapeHtml(tr('Filtros granulares', 'Granular filters'))}</h4>
-          <div class="advanced-criteria-list" id="advancedFiltersRows"></div>
-          <button class="btn" type="button" id="btnAdvancedAddFilter">${escapeHtml(tr('+ Añadir filtro', '+ Add filter'))}</button>
+          <div class="advanced-criteria-list" id="advancedFiltersGroups"></div>
+          <button class="btn" type="button" id="btnAdvancedAddFilterGroup">${escapeHtml(tr('+ Añadir grupo', '+ Add group'))}</button>
         </section>
         <section class="advanced-criteria-col">
           <h4>${escapeHtml(tr('Ordenación granular', 'Granular sorting'))}</h4>
@@ -3249,13 +4555,19 @@ function openAdvancedCriteriaModal({ focus = 'filter', presetPropertyId = null }
       </div>
     `,
     onSubmit: async (modal) => {
-      const nextFilters = [...modal.querySelectorAll('#advancedFiltersRows .advanced-criteria-row')]
-        .map(row => ({
-          propertyId: Number(row.querySelector('[data-role="property"]').value || 0),
-          operator: row.querySelector('[data-role="operator"]').value,
-          value: row.querySelector('[data-role="value"]').value,
+      const nextFilterGroups = [...modal.querySelectorAll('#advancedFiltersGroups .advanced-filter-group')]
+        .map(group => ({
+          logic: group.querySelector('[data-role="group-logic"]').value === 'or' ? 'or' : 'and',
+          rules: [...group.querySelectorAll('.advanced-criteria-row')]
+            .map(row => ({
+              propertyId: Number(row.querySelector('[data-role="property"]').value || 0),
+              operator: row.querySelector('[data-role="operator"]').value,
+              value: row.querySelector('[data-role="value"]')?.value || '',
+              valueTo: row.querySelector('[data-role="value-to"]')?.value || '',
+            }))
+            .filter(item => item.propertyId),
         }))
-        .filter(item => item.propertyId);
+        .filter(group => group.rules.length);
 
       const nextSorts = [...modal.querySelectorAll('#advancedSortRows .advanced-sort-row')]
         .map(row => ({
@@ -3264,8 +4576,10 @@ function openAdvancedCriteriaModal({ focus = 'filter', presetPropertyId = null }
         }))
         .filter(item => item.propertyId);
 
-      STATE.filters = nextFilters;
+      STATE.filterGroups = nextFilterGroups;
+      STATE.filterGroupOperator = modal.querySelector('#advancedGroupLogic').value === 'or' ? 'or' : 'and';
       STATE.sorts = nextSorts;
+      STATE.groupByPropertyId = Number(modal.querySelector('#advancedGroupBy').value || 0) || null;
       STATE.page = 1;
       renderFilters();
       await persistActiveViewCriteria();
@@ -3274,18 +4588,15 @@ function openAdvancedCriteriaModal({ focus = 'filter', presetPropertyId = null }
     },
   });
 
-  const filtersHost = document.getElementById('advancedFiltersRows');
+  const filtersHost = document.getElementById('advancedFiltersGroups');
   const sortsHost = document.getElementById('advancedSortRows');
+  document.getElementById('advancedGroupLogic').value = STATE.filterGroupOperator === 'or' ? 'or' : 'and';
 
-  if (STATE.filters.length) STATE.filters.forEach(filter => addAdvancedFilterRow(filtersHost, filter));
+  if (STATE.filterGroups.length) STATE.filterGroups.forEach(group => addAdvancedFilterGroup(filtersHost, group, { presetPropertyId }));
   if (STATE.sorts.length) STATE.sorts.forEach(sort => addAdvancedSortRow(sortsHost, sort));
 
-  if (!STATE.filters.length && (focus === 'filter' || presetPropertyId)) {
-    addAdvancedFilterRow(filtersHost, {
-      propertyId: presetPropertyId || STATE.selectedDatabase.properties[0]?.id,
-      operator: 'contains',
-      value: '',
-    });
+  if (!STATE.filterGroups.length && (focus === 'filter' || presetPropertyId)) {
+    addAdvancedFilterGroup(filtersHost, emptyFilterGroup(), { presetPropertyId });
   }
 
   if (!STATE.sorts.length && (focus === 'sort' || presetPropertyId)) {
@@ -3295,8 +4606,12 @@ function openAdvancedCriteriaModal({ focus = 'filter', presetPropertyId = null }
     });
   }
 
-  document.getElementById('btnAdvancedAddFilter').addEventListener('click', () => {
-    addAdvancedFilterRow(filtersHost, { propertyId: STATE.selectedDatabase.properties[0]?.id, operator: 'contains', value: '' });
+  if (!STATE.filterGroups.length && focus === 'group') {
+    document.getElementById('advancedGroupBy').focus();
+  }
+
+  document.getElementById('btnAdvancedAddFilterGroup').addEventListener('click', () => {
+    addAdvancedFilterGroup(filtersHost, emptyFilterGroup(), { presetPropertyId });
   });
 
   document.getElementById('btnAdvancedAddSort').addEventListener('click', () => {
@@ -3634,15 +4949,7 @@ function applyLanguage() {
   const dbLabel = document.querySelector('#btnNewDatabase span');
   if (dbLabel) dbLabel.textContent = STATE.language === 'en' ? 'New database' : 'Nueva base de datos';
 
-  const homeTitle = document.querySelector('#homeState h2');
-  if (homeTitle) homeTitle.textContent = STATE.language === 'en' ? 'Select or create a database' : 'Selecciona o crea una base de datos';
-
-  const homeText = document.querySelector('#homeState p');
-  if (homeText) {
-    homeText.textContent = STATE.language === 'en'
-      ? 'Organize your databases in folders and configure properties, relations, views and dynamic analysis.'
-      : 'Organiza tus bases en carpetas y configura propiedades, relaciones, vistas y análisis dinámicos.';
-  }
+  renderHomeState();
 
   const btnImportCsv = document.getElementById('btnImportCsv');
   if (btnImportCsv) btnImportCsv.textContent = STATE.language === 'en' ? 'Import CSV' : 'Importar CSV';
@@ -3680,6 +4987,12 @@ function applyLanguage() {
     btnAdvancedSort.setAttribute('aria-label', btnAdvancedSort.title);
   }
 
+  const btnAdvancedGroup = document.getElementById('btnAdvancedGroup');
+  if (btnAdvancedGroup) {
+    btnAdvancedGroup.title = STATE.language === 'en' ? 'Grouping' : 'Agrupación';
+    btnAdvancedGroup.setAttribute('aria-label', btnAdvancedGroup.title);
+  }
+
   const settingsBtn = document.getElementById('btnAppSettings');
   settingsBtn.title = t('globalSettings');
   settingsBtn.setAttribute('aria-label', t('globalSettings'));
@@ -3693,7 +5006,9 @@ function applyLanguage() {
   renderSidebar();
   if (STATE.selectedDatabase) {
     renderDatabaseHeader();
+    renderDatabaseOverview();
     renderViewTabs();
+    renderViewMeta();
     renderActiveView();
   }
 }
@@ -3719,6 +5034,9 @@ function openAppSettingsModal() {
   const tutorialHideText = tr('Ocultar tutorial API', 'Hide API tutorial');
   const tutorialCopyText = tr('Copiar tutorial', 'Copy tutorial');
   const tutorialCopiedText = tr('Tutorial copiado', 'Tutorial copied');
+  const apiKeyScopeOptionsHtml = API_KEY_SCOPE_OPTIONS
+    .map(option => `<option value="${escapeHtml(option.value)}" ${option.value === '*' ? 'selected' : ''}>${escapeHtml(STATE.language === 'en' ? option.labelEn : option.labelEs)}</option>`)
+    .join('');
 
   openModal({
     title: t('globalSettings'),
@@ -3753,10 +5071,19 @@ function openAppSettingsModal() {
           <label>${escapeHtml(tr('Etiqueta (opcional)', 'Label (optional)'))}
             <input id="settingsApiKeyLabel" placeholder="${escapeHtml(tr('Ej: Make / Zapier / n8n', 'e.g. Make / Zapier / n8n'))}" />
           </label>
+          <label>${escapeHtml(tr('Caducidad (opcional)', 'Expiration (optional)'))}
+            <input id="settingsApiKeyExpiresAt" type="datetime-local" />
+          </label>
+        </div>
+        <div class="columns-2">
+          <label>${escapeHtml(tr('Scopes / permisos', 'Scopes / permissions'))}
+            <select id="settingsApiKeyScopes" multiple size="6">${apiKeyScopeOptionsHtml}</select>
+          </label>
           <div style="display:flex;align-items:flex-end;">
             <button class="btn" type="button" id="btnCreateApiKey">${escapeHtml(tr('Crear nueva clave', 'Create new key'))}</button>
           </div>
         </div>
+        <div class="count">${escapeHtml(tr('Si dejas "Acceso total" seleccionado, la clave podrá usar toda la API. Quita esa opción para limitar permisos.', 'If "Full access" stays selected, the key can use the whole API. Remove it to limit permissions.'))}</div>
         <label>${escapeHtml(tr('Clave recién creada (solo visible ahora)', 'New key (visible only now)'))}
           <input id="settingsApiKeyPlain" readonly value="" placeholder="${escapeHtml(tr('Aún no creada', 'Not created yet'))}" />
         </label>
@@ -3820,6 +5147,8 @@ function openAppSettingsModal() {
 
   const apiKeysList = document.getElementById('settingsApiKeysList');
   const apiKeyLabel = document.getElementById('settingsApiKeyLabel');
+  const apiKeyScopes = document.getElementById('settingsApiKeyScopes');
+  const apiKeyExpiresAt = document.getElementById('settingsApiKeyExpiresAt');
   const apiKeyPlain = document.getElementById('settingsApiKeyPlain');
   const createApiKeyBtn = document.getElementById('btnCreateApiKey');
   const databaseCodesList = document.getElementById('settingsDatabaseCodesList');
@@ -3837,15 +5166,27 @@ function openAppSettingsModal() {
       return;
     }
 
-    apiKeysList.innerHTML = list
+      apiKeysList.innerHTML = list
       .map(item => {
         const label = item.label ? ` · ${escapeHtml(item.label)}` : '';
-        const state = item.active ? tr('Activa', 'Active') : tr('Revocada', 'Revoked');
+        const state = item.active
+          ? tr('Activa', 'Active')
+          : (item.expired ? tr('Caducada', 'Expired') : tr('Revocada', 'Revoked'));
+        const expiresLine = item.expiresAt
+          ? tr(`Caduca: ${formatDateTime(item.expiresAt)}`, `Expires: ${formatDateTime(item.expiresAt)}`)
+          : tr('Sin caducidad', 'No expiration');
+        const lastUsedLine = item.lastUsedAt
+          ? tr(`Último uso: ${formatDateTime(item.lastUsedAt)}`, `Last used: ${formatDateTime(item.lastUsedAt)}`)
+          : tr('Sin uso todavía', 'No usage yet');
+        const scopesLine = tr(`Scopes: ${formatApiKeyScopes(item.scopes)}`, `Scopes: ${formatApiKeyScopes(item.scopes)}`);
+        const usageLine = tr(`Uso total: ${Number(item.usageCount || 0)}`, `Total usage: ${Number(item.usageCount || 0)}`);
         return `
           <div class="config-row" data-api-key-id="${escapeHtml(item.id)}" style="grid-template-columns:1fr auto;align-items:center;">
             <div>
               <strong>${escapeHtml(item.prefix)}…</strong>${label}
-              <div class="count">${escapeHtml(state)} · ${escapeHtml(item.createdAt || '')}</div>
+              <div class="count">${escapeHtml(state)} · ${escapeHtml(formatDateTime(item.createdAt || ''))}</div>
+              <div class="count">${escapeHtml(scopesLine)}</div>
+              <div class="count">${escapeHtml(expiresLine)} · ${escapeHtml(lastUsedLine)} · ${escapeHtml(usageLine)}</div>
             </div>
             ${item.active ? `<button class="btn btn-danger" type="button" data-role="revoke-api-key">${escapeHtml(tr('Revocar', 'Revoke'))}</button>` : ''}
           </div>
@@ -3997,6 +5338,8 @@ function openAppSettingsModal() {
   if (createApiKeyBtn) {
     createApiKeyBtn.addEventListener('click', async () => {
       const label = apiKeyLabel?.value?.trim() || null;
+      const selectedScopes = [...(apiKeyScopes?.selectedOptions || [])].map(option => option.value);
+      const expiresAtValue = apiKeyExpiresAt?.value ? new Date(apiKeyExpiresAt.value).toISOString() : null;
       createApiKeyBtn.disabled = true;
       createApiKeyBtn.classList.add('is-loading');
       const prev = createApiKeyBtn.textContent;
@@ -4005,7 +5348,11 @@ function openAppSettingsModal() {
       try {
         const created = await api('/api/settings/api-keys', {
           method: 'POST',
-          body: label ? { label } : {},
+          body: {
+            ...(label ? { label } : {}),
+            ...(selectedScopes.length ? { scopes: selectedScopes } : {}),
+            ...(expiresAtValue ? { expiresAt: expiresAtValue } : {}),
+          },
         });
         if (apiKeyPlain) {
           apiKeyPlain.value = created.key || '';
@@ -4013,6 +5360,12 @@ function openAppSettingsModal() {
           apiKeyPlain.select();
         }
         if (apiKeyLabel) apiKeyLabel.value = '';
+        if (apiKeyExpiresAt) apiKeyExpiresAt.value = '';
+        if (apiKeyScopes) {
+          [...apiKeyScopes.options].forEach(option => {
+            option.selected = option.value === '*';
+          });
+        }
         await refreshApiKeys();
       } finally {
         createApiKeyBtn.disabled = false;
@@ -4030,6 +5383,7 @@ function openAppSettingsModal() {
   if (downloadBtn) {
     downloadBtn.addEventListener('click', () => {
       window.open('/api/backup/full', '_blank');
+      showToast(tr('Backup completo en descarga', 'Full backup download started'), 'success');
     });
   }
 
@@ -4039,10 +5393,7 @@ function openAppSettingsModal() {
       const fileInput = document.getElementById('settingsRestorePortfolioFile');
       const file = fileInput?.files?.[0];
       if (!file) {
-        openConfirmMini({
-          message: STATE.language === 'en' ? 'Select a ZIP file first.' : 'Selecciona un archivo ZIP primero.',
-          confirmText: 'OK',
-        });
+        showToast(STATE.language === 'en' ? 'Select a ZIP file first.' : 'Selecciona un archivo ZIP primero.', 'warning');
         return;
       }
 
@@ -4057,10 +5408,7 @@ function openAppSettingsModal() {
         const response = await fetch('/api/backup/full/restore', { method: 'POST', body: form });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-          openConfirmMini({
-            message: result.error || (STATE.language === 'en' ? 'Restore error' : 'Error al restaurar'),
-            confirmText: 'OK',
-          });
+          showToast(result.error || (STATE.language === 'en' ? 'Restore error' : 'Error al restaurar'), 'error', 3600);
           return;
         }
 
@@ -4080,15 +5428,9 @@ function openAppSettingsModal() {
           await selectDatabase(STATE.selectedDatabaseId);
         }
 
-        openConfirmMini({
-          message: result.message || t('portfolioRestoreSuccess'),
-          confirmText: 'OK',
-        });
+        showToast(result.message || t('portfolioRestoreSuccess'), 'success');
       } catch (error) {
-        openConfirmMini({
-          message: (STATE.language === 'en' ? 'Error: ' : 'Error: ') + error.message,
-          confirmText: 'OK',
-        });
+        showToast((STATE.language === 'en' ? 'Error: ' : 'Error: ') + error.message, 'error', 3600);
       } finally {
         restoreBtn.disabled = false;
         restoreBtn.classList.remove('is-loading');
@@ -4115,7 +5457,9 @@ function openAppSettingsModal() {
           STATE.selectedDatabase = null;
           STATE.folders = [];
           STATE.databases = [];
-          STATE.filters = [];
+          STATE.filterGroups = [];
+          STATE.filterGroupOperator = 'and';
+          STATE.groupByPropertyId = null;
           STATE.sorts = [];
           STATE.records = [];
           STATE.totalRecords = 0;
@@ -4187,13 +5531,14 @@ function openModal({ title, content, onSubmit, submitText = t('save'), width = '
     </form>
   `;
 
-  modal.showModal();
+  if (!modal.open) modal.showModal();
 
   const form = modal.querySelector('form');
   const cancelBtn = modal.querySelector('#modalCancel');
   const closeXBtn = modal.querySelector('#modalCloseX');
   const submitBtn = modal.querySelector('#modalSubmit');
   const originalSubmitLabel = submitBtn?.textContent || submitText;
+  if (submitBtn) submitBtn.dataset.idleLabel = originalSubmitLabel;
   let submitting = false;
 
   const closeModalSafely = () => {
@@ -4228,7 +5573,7 @@ function openModal({ title, content, onSubmit, submitText = t('save'), width = '
     if (!submitBtn) return;
     submitBtn.classList.remove('is-loading');
     submitBtn.classList.remove('is-saved');
-    submitBtn.textContent = originalSubmitLabel;
+    submitBtn.textContent = submitBtn.dataset.idleLabel || originalSubmitLabel;
   }
 
   async function showAffirmativeConfirmation() {
@@ -4320,28 +5665,339 @@ function openCreateFolderModal() {
   });
 }
 
-function openCreateDatabaseModal() {
+function openCreateDatabaseModal(options = {}) {
+  const incoming = options instanceof Event ? {} : (options || {});
+  const hasPresetTemplate = Object.prototype.hasOwnProperty.call(incoming, 'initialTemplateKey');
+  const defaultTemplateKey = Number(incoming.startStep || 0) === 1 ? String(DATABASE_TEMPLATES[0]?.key || '') : '';
+  const initialTemplateKey = hasPresetTemplate ? String(incoming.initialTemplateKey || '') : defaultTemplateKey;
+  const initialFolderId = Number((incoming.folderId ?? STATE.selectedFolderId) || 0) || null;
+  const initialStep = Math.max(1, Math.min(3, Number(incoming.startStep || (hasPresetTemplate ? 2 : 1)) || 1));
+  const templateDefinitions = [
+    {
+      key: '',
+      name: tr('En blanco', 'Blank'),
+      description: tr('Empieza desde cero con solo ID y título.', 'Start from scratch with only ID and title.'),
+      highlights: [tr('Ligero', 'Lightweight'), tr('Flexible', 'Flexible')],
+    },
+    ...DATABASE_TEMPLATES.map(template => ({
+      key: template.key,
+      name: STATE.language === 'en' ? template.nameEn : template.nameEs,
+      description: STATE.language === 'en' ? template.descriptionEn : template.descriptionEs,
+      highlights: STATE.language === 'en' ? template.highlightsEn : template.highlightsEs,
+    })),
+  ];
   const folderOptions = [`<option value="">${escapeHtml(tr('(Sin carpeta)', '(No folder)'))}</option>`]
-    .concat(STATE.folders.map(folder => `<option value="${folder.id}">${escapeHtml(folder.name)}</option>`))
+    .concat(STATE.folders.map(folder => `<option value="${folder.id}" ${folder.id === initialFolderId ? 'selected' : ''}>${escapeHtml(folder.name)}</option>`))
     .join('');
+  const templateCards = templateDefinitions.map(template => `
+    <button type="button" class="template-card ${template.key === initialTemplateKey ? 'active' : ''}" data-template-key="${template.key}">
+      <strong>${escapeHtml(template.name)}</strong>
+      <span>${escapeHtml(template.description)}</span>
+      <div class="template-card-tags">${template.highlights.map(item => `<span>${escapeHtml(item)}</span>`).join('')}</div>
+    </button>
+  `).join('');
+  const stepItems = [
+    {
+      step: '1',
+      title: tr('Plantilla', 'Template'),
+      text: tr('Elige una base de partida', 'Choose a starting point'),
+    },
+    {
+      step: '2',
+      title: tr('Contexto', 'Context'),
+      text: tr('Pon nombre y carpeta', 'Name it and place it'),
+    },
+    {
+      step: '3',
+      title: tr('Resumen', 'Review'),
+      text: tr('Revisa la estructura inicial', 'Review the initial structure'),
+    },
+  ];
 
   openModal({
     title: tr('Nueva base de datos', 'New database'),
+    submitText: tr('Continuar', 'Next'),
+    width: '960px',
     content: `
-      <label>${escapeHtml(tr('Nombre', 'Name'))}<input id="databaseName" /></label>
-      <label>${escapeHtml(tr('Carpeta', 'Folder'))}<select id="databaseFolder">${folderOptions}</select></label>
+      <div class="database-wizard">
+        <div class="database-wizard-progress">
+          ${stepItems.map(item => `
+            <div class="database-wizard-progress-item" data-step-marker="${item.step}">
+              <span>${escapeHtml(item.step)}</span>
+              <strong>${escapeHtml(item.title)}</strong>
+              <p>${escapeHtml(item.text)}</p>
+            </div>
+          `).join('')}
+        </div>
+        <div class="database-wizard-panel">
+          <div class="database-wizard-intro">
+            <span class="database-wizard-mode" id="databaseWizardMode"></span>
+            <strong id="databaseWizardStepTitle"></strong>
+            <p id="databaseWizardStepText"></p>
+          </div>
+          <div id="databaseWizardNotice"></div>
+          <input id="databaseTemplateKey" type="hidden" value="${escapeHtml(initialTemplateKey)}" />
+
+          <section class="database-wizard-section" data-wizard-step="1">
+            <div class="template-picker">
+              ${templateCards}
+            </div>
+          </section>
+
+          <section class="database-wizard-section hidden" data-wizard-step="2">
+            <div class="columns-2">
+              <label>${escapeHtml(tr('Nombre', 'Name'))}<input id="databaseName" placeholder="${escapeHtml(tr('Ej. Archivo 2026', 'e.g. 2026 archive'))}" /></label>
+              <label>${escapeHtml(tr('Carpeta', 'Folder'))}<select id="databaseFolder">${folderOptions}</select></label>
+            </div>
+            <div class="database-wizard-selected-template">
+              <strong id="databaseWizardTemplateName"></strong>
+              <p id="databaseWizardTemplateDescription"></p>
+              <div class="database-wizard-highlight-list" id="databaseWizardTemplateHighlights"></div>
+            </div>
+          </section>
+
+          <section class="database-wizard-section hidden" data-wizard-step="3">
+            <div class="database-wizard-summary">
+              <div class="database-wizard-summary-card">
+                <span>${escapeHtml(tr('Nombre', 'Name'))}</span>
+                <strong id="databaseWizardSummaryName"></strong>
+              </div>
+              <div class="database-wizard-summary-card">
+                <span>${escapeHtml(tr('Carpeta', 'Folder'))}</span>
+                <strong id="databaseWizardSummaryFolder"></strong>
+              </div>
+              <div class="database-wizard-summary-card">
+                <span>${escapeHtml(tr('Base inicial', 'Starting point'))}</span>
+                <strong id="databaseWizardSummaryTemplate"></strong>
+              </div>
+            </div>
+            <div class="database-wizard-guide">
+              <strong>${escapeHtml(tr('Cómo pensar los tipos de propiedad', 'How to think about property types'))}</strong>
+              <div class="home-property-guide">
+                ${propertyTypeGuideItems().map(item => `
+                  <div class="home-property-guide-item">
+                    <strong>${escapeHtml(item.title)}</strong>
+                    <p>${escapeHtml(item.description)}</p>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
     `,
-    onSubmit: async () => {
-      const name = document.getElementById('databaseName').value.trim();
-      const folderId = Number(document.getElementById('databaseFolder').value || 0) || null;
-      if (!name) return true;
-      const result = await api('/api/databases', { method: 'POST', body: { name, folderId } });
+    onSubmit: async (modal) => {
+      const nameInput = modal.querySelector('#databaseName');
+      const folderSelect = modal.querySelector('#databaseFolder');
+      const hiddenTemplate = modal.querySelector('#databaseTemplateKey');
+      const notice = modal.querySelector('#databaseWizardNotice');
+      const name = nameInput?.value.trim() || '';
+
+      const setNotice = (message = '', kind = 'info') => {
+        if (!notice) return;
+        notice.innerHTML = message
+          ? `<div class="database-wizard-notice is-${kind}">${escapeHtml(message)}</div>`
+          : '';
+      };
+
+      if (wizard.step === 1) {
+        wizard.step = 2;
+        setNotice('');
+        renderWizard();
+        return true;
+      }
+
+      if (wizard.step === 2) {
+        if (!name) {
+          nameInput?.classList.add('is-invalid');
+          setNotice(tr('Pon un nombre antes de continuar.', 'Add a name before continuing.'), 'warning');
+          showToast(tr('Falta el nombre de la base.', 'Database name is required.'), 'warning');
+          nameInput?.focus();
+          return true;
+        }
+        wizard.step = 3;
+        setNotice('');
+        renderWizard();
+        return true;
+      }
+
+      if (!name) {
+        wizard.step = 2;
+        renderWizard();
+        nameInput?.classList.add('is-invalid');
+        setNotice(tr('Pon un nombre antes de crear la base.', 'Add a name before creating the database.'), 'warning');
+        showToast(tr('Falta el nombre de la base.', 'Database name is required.'), 'warning');
+        nameInput?.focus();
+        return true;
+      }
+
+      const folderId = Number(folderSelect?.value || 0) || null;
+      const templateKey = hiddenTemplate?.value || null;
+      const result = await api('/api/databases', { method: 'POST', body: { name, folderId, templateKey } });
       STATE.selectedFolderId = folderId;
       await refreshBootstrap();
       await selectDatabase(result.id);
+      showToast(tr('Base de datos creada', 'Database created'), 'success');
       return false;
     },
   });
+
+  const modal = document.getElementById('modal');
+  const nameInput = modal.querySelector('#databaseName');
+  const folderSelect = modal.querySelector('#databaseFolder');
+  const hiddenTemplate = modal.querySelector('#databaseTemplateKey');
+  const submitBtn = modal.querySelector('#modalSubmit');
+  const cancelBtn = modal.querySelector('#modalCancel');
+  const actions = modal.querySelector('.modal-actions');
+  const wizard = {
+    step: initialStep,
+    templateKey: initialTemplateKey,
+    autoNamed: false,
+  };
+
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = 'btn';
+  backBtn.id = 'databaseWizardBack';
+  backBtn.textContent = tr('Atrás', 'Back');
+  actions?.insertBefore(backBtn, cancelBtn || submitBtn);
+
+  const stepCopy = {
+    1: {
+      mode: tr('Primer uso guiado', 'Guided first run'),
+      title: tr('Elige una plantilla o empieza en blanco', 'Choose a template or start blank'),
+      text: tr('Selecciona una estructura inicial para reducir trabajo manual desde el primer minuto.', 'Pick a starting structure to reduce manual work from the first minute.'),
+    },
+    2: {
+      mode: tr('Contexto de la base', 'Database context'),
+      title: tr('Dale un nombre claro y ubícala bien', 'Give it a clear name and place it well'),
+      text: tr('El nombre debe explicar el dataset; la carpeta ayuda a mantener el workspace legible.', 'The name should explain the dataset; the folder keeps the workspace readable.'),
+    },
+    3: {
+      mode: tr('Revisión final', 'Final review'),
+      title: tr('Confirma el punto de partida', 'Confirm the starting point'),
+      text: tr('Antes de crearla, revisa la plantilla elegida y cómo encajan los tipos de propiedad.', 'Before creating it, review the selected template and how property types fit together.'),
+    },
+  };
+
+  function selectedTemplate() {
+    return templateDefinitions.find(item => item.key === wizard.templateKey) || templateDefinitions[0];
+  }
+
+  function updateNotice(message = '', kind = 'info') {
+    const notice = modal.querySelector('#databaseWizardNotice');
+    if (!notice) return;
+    notice.innerHTML = message
+      ? `<div class="database-wizard-notice is-${kind}">${escapeHtml(message)}</div>`
+      : '';
+  }
+
+  function syncTemplateSelection() {
+    [...modal.querySelectorAll('.template-card')].forEach(card => {
+      const key = card.getAttribute('data-template-key') || '';
+      card.classList.toggle('active', key === wizard.templateKey);
+    });
+    if (hiddenTemplate) hiddenTemplate.value = wizard.templateKey;
+  }
+
+  function seedNameFromTemplate() {
+    if (!nameInput) return;
+    if (!wizard.templateKey) {
+      if (wizard.autoNamed) nameInput.value = '';
+      wizard.autoNamed = false;
+      return;
+    }
+    const template = DATABASE_TEMPLATES.find(item => item.key === wizard.templateKey);
+    if (!template) return;
+    if (nameInput.value.trim() && !wizard.autoNamed) return;
+    nameInput.value = STATE.language === 'en' ? template.nameEn : template.nameEs;
+    wizard.autoNamed = true;
+  }
+
+  function renderWizard() {
+    const template = selectedTemplate();
+    syncTemplateSelection();
+    [...modal.querySelectorAll('[data-wizard-step]')].forEach(section => {
+      const sectionStep = Number(section.getAttribute('data-wizard-step') || 0);
+      section.classList.toggle('hidden', sectionStep !== wizard.step);
+    });
+    [...modal.querySelectorAll('[data-step-marker]')].forEach(item => {
+      const stepNumber = Number(item.getAttribute('data-step-marker') || 0);
+      item.classList.toggle('is-active', stepNumber === wizard.step);
+      item.classList.toggle('is-complete', stepNumber < wizard.step);
+    });
+
+    const copy = stepCopy[wizard.step] || stepCopy[1];
+    const mode = modal.querySelector('#databaseWizardMode');
+    const title = modal.querySelector('#databaseWizardStepTitle');
+    const text = modal.querySelector('#databaseWizardStepText');
+    if (mode) mode.textContent = copy.mode;
+    if (title) title.textContent = copy.title;
+    if (text) text.textContent = copy.text;
+
+    const templateName = modal.querySelector('#databaseWizardTemplateName');
+    const templateDescription = modal.querySelector('#databaseWizardTemplateDescription');
+    const templateHighlights = modal.querySelector('#databaseWizardTemplateHighlights');
+    if (templateName) templateName.textContent = template.name;
+    if (templateDescription) templateDescription.textContent = template.description;
+    if (templateHighlights) {
+      templateHighlights.innerHTML = template.highlights.map(item => `<span>${escapeHtml(item)}</span>`).join('');
+    }
+
+    const summaryName = modal.querySelector('#databaseWizardSummaryName');
+    const summaryFolder = modal.querySelector('#databaseWizardSummaryFolder');
+    const summaryTemplate = modal.querySelector('#databaseWizardSummaryTemplate');
+    if (summaryName) summaryName.textContent = nameInput?.value.trim() || tr('Sin nombre todavía', 'No name yet');
+    if (summaryFolder) {
+      const folderName = STATE.folders.find(folder => folder.id === Number(folderSelect?.value || 0))?.name || tr('Sin carpeta', 'No folder');
+      summaryFolder.textContent = folderName;
+    }
+    if (summaryTemplate) summaryTemplate.textContent = template.name;
+
+    if (backBtn) backBtn.classList.toggle('hidden', wizard.step === 1);
+    if (submitBtn) {
+      const nextLabel = wizard.step === 3 ? tr('Crear base de datos', 'Create database') : tr('Continuar', 'Next');
+      submitBtn.dataset.idleLabel = nextLabel;
+      submitBtn.textContent = nextLabel;
+    }
+
+    requestAnimationFrame(() => {
+      if (wizard.step === 2) nameInput?.focus();
+      if (wizard.step === 1) modal.querySelector('.template-card.active')?.focus();
+    });
+  }
+
+  [...modal.querySelectorAll('.template-card')].forEach(card => {
+    card.addEventListener('click', () => {
+      wizard.templateKey = card.getAttribute('data-template-key') || '';
+      seedNameFromTemplate();
+      updateNotice('');
+      renderWizard();
+    });
+  });
+
+  nameInput?.addEventListener('input', () => {
+    nameInput.classList.remove('is-invalid');
+    const template = DATABASE_TEMPLATES.find(item => item.key === wizard.templateKey);
+    const suggestedName = template ? (STATE.language === 'en' ? template.nameEn : template.nameEs) : '';
+    wizard.autoNamed = Boolean(suggestedName) && nameInput.value.trim() === suggestedName;
+    updateNotice('');
+    renderWizard();
+  });
+
+  folderSelect?.addEventListener('change', () => {
+    renderWizard();
+  });
+
+  backBtn.addEventListener('click', () => {
+    if (wizard.step <= 1) return;
+    wizard.step -= 1;
+    updateNotice('');
+    renderWizard();
+  });
+
+  seedNameFromTemplate();
+  renderWizard();
 }
 
 /* ── Export database modal ── */
@@ -4367,12 +6023,14 @@ function openExportDbModal() {
 
       const params = new URLSearchParams({ mode, includeFiles });
       if (mode === 'view') {
-        params.set('filters', JSON.stringify(STATE.filters || []));
+        params.set('filters', JSON.stringify(currentFiltersPayload()));
         params.set('search', STATE.search || '');
       }
 
       const url = `/api/databases/${STATE.selectedDatabaseId}/export?${params.toString()}`;
       window.open(url, '_blank');
+      showToast(tr('Copia de seguridad iniciada', 'Backup download started'), 'success');
+      setLastFeedback('success', tr('Exportando la base actual', 'Exporting the current database'));
       return false;
     },
   });
@@ -4395,7 +6053,10 @@ function openRestoreDbModal() {
     onSubmit: async (modal) => {
       const input = modal.querySelector('#restoreFileInput');
       const file = input?.files?.[0];
-      if (!file) return true;
+      if (!file) {
+        showToast(tr('Selecciona un backup para restaurar.', 'Select a backup file to restore.'), 'warning');
+        return true;
+      }
 
       const submitBtn = modal.querySelector('#modalSubmit');
       const previousLabel = submitBtn?.textContent || tr('Restaurar', 'Restore');
@@ -4413,7 +6074,9 @@ function openRestoreDbModal() {
         const response = await fetch('/api/restore', { method: 'POST', body: form });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-          openConfirmMini({ message: result.error || tr('Error al restaurar', 'Restore error'), confirmText: 'OK' });
+          const message = result.error || tr('Error al restaurar', 'Restore error');
+          showToast(message, 'error', 3600);
+          setLastFeedback('error', message, { timeoutMs: 3600 });
           return true;
         }
 
@@ -4422,14 +6085,14 @@ function openRestoreDbModal() {
           await selectDatabase(result.databaseId);
         }
 
-        openConfirmMini({
-          message: result.message || t('restoreSuccess'),
-          confirmText: 'OK',
-        });
+        showToast(result.message || t('restoreSuccess'), 'success');
+        setLastFeedback('success', tr('Copia restaurada y lista para revisar', 'Backup restored and ready to review'));
 
         shouldResetButton = false;
       } catch (err) {
-        openConfirmMini({ message: `${tr('Error', 'Error')}: ${err.message}`, confirmText: 'OK' });
+        const message = `${tr('Error', 'Error')}: ${err.message}`;
+        showToast(message, 'error', 3600);
+        setLastFeedback('error', message, { timeoutMs: 3600 });
         return true;
       } finally {
         if (submitBtn && shouldResetButton) {
@@ -5159,22 +6822,25 @@ async function openRecordModal(existingRecord) {
     } else if (prop.type === 'attachment') {
       const current = isEditing ? existingRecord.values[prop.key] : [];
       const files = Array.isArray(current) ? current : [];
+      const attachmentEntries = isEditing ? (existingRecord.attachments?.[prop.id] || []) : [];
       const hasFiles = files.length > 0;
       const fileListHtml = hasFiles
-        ? files.map(url => {
-            const name = attachmentFileName(url);
-            const isImg = isImageAttachment(url);
+        ? attachmentEntries.map(file => {
+            const url = file.url;
+            const name = file.file_name || attachmentFileName(url);
+            const isImg = attachmentPreviewKind(file) === 'image';
             const previewHtml = isImg
-              ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" class="record-attachment-thumb" data-preview-url="${escapeHtml(url)}" data-preview-name="${escapeHtml(name)}" />`
-              : `<span class="record-attachment-doc">${attachmentIconForUrl(url)} ${escapeHtml(name)}</span>`;
+              ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" class="record-attachment-thumb" data-preview-url="${escapeHtml(url)}" data-preview-name="${escapeHtml(name)}" data-preview-prop="${prop.id}" />`
+              : `<span class="record-attachment-doc" data-preview-url="${escapeHtml(url)}" data-preview-name="${escapeHtml(name)}" data-preview-prop="${prop.id}">${attachmentIconForUrl(url)} ${escapeHtml(name)}</span>`;
             return `<div class="record-attachment-item attachment-thumb-wrap">
               ${previewHtml}
-              ${isEditing ? `<button type="button" class="attachment-delete-btn" data-delete-url="${escapeHtml(url)}" title="${escapeHtml(t('deleteAttachment'))}" aria-label="${escapeHtml(t('deleteAttachment'))}">×</button>` : ''}
+              <span class="record-attachment-meta">${escapeHtml(formatFileSize(file.size_bytes))} · ${escapeHtml(formatAttachmentDate(file.created_at))}</span>
+              ${isEditing ? `<button type="button" class="attachment-delete-btn" data-delete-id="${file.id}" title="${escapeHtml(t('deleteAttachment'))}" aria-label="${escapeHtml(t('deleteAttachment'))}">×</button>` : ''}
             </div>`;
           }).join('')
         : `<span class="count">${escapeHtml(tr('Sin adjuntos', 'No attachments'))}</span>`;
-      const uploadHtml = isEditing && !hasFiles
-        ? `<div class="record-attachment-upload"><input id="upload-${prop.id}" type="file" /><button type="button" class="btn" data-upload-prop="${prop.id}">${escapeHtml(tr('Subir', 'Upload'))}</button><span class="attachment-upload-spinner record-attachment-spinner" aria-hidden="true"></span></div>`
+      const uploadHtml = isEditing
+        ? `<div class="record-attachment-upload"><input id="upload-${prop.id}" type="file" multiple /><button type="button" class="btn" data-upload-prop="${prop.id}">${escapeHtml(tr('Subir archivos', 'Upload files'))}</button><button type="button" class="btn" data-open-browser="${prop.id}">${escapeHtml(tr('Abrir panel', 'Open panel'))}</button><span class="attachment-upload-spinner record-attachment-spinner" aria-hidden="true"></span></div>`
         : (!isEditing ? `<span class="count">${escapeHtml(tr('Guarda el registro para adjuntar archivos.', 'Save the record to attach files.'))}</span>` : '');
       fieldHtml = `<div class="record-attachment-zone">${fileListHtml}${uploadHtml}</div>`;
     } else {
@@ -5190,7 +6856,29 @@ async function openRecordModal(existingRecord) {
     </div>`);
   }
 
-  const content = `<div class="record-detail">${rows.join('')}</div>`;
+  const metaBlock = isEditing ? `
+    <div class="record-meta-strip">
+      <div class="record-meta-item">
+        <span>${escapeHtml(tr('Creado', 'Created'))}</span>
+        <strong>${escapeHtml(formatDateTime(existingRecord.createdAt || ''))}</strong>
+      </div>
+      <div class="record-meta-item">
+        <span>${escapeHtml(tr('Actualizado', 'Updated'))}</span>
+        <strong>${escapeHtml(formatDateTime(existingRecord.updatedAt || ''))}</strong>
+      </div>
+    </div>
+    <div class="record-activity-panel">
+      <div class="record-activity-head">
+        <strong>${escapeHtml(tr('Actividad reciente', 'Recent activity'))}</strong>
+        <span class="count">${escapeHtml(tr('Historial básico del registro', 'Basic record history'))}</span>
+      </div>
+      <div id="recordActivityList" class="record-activity-list">
+        <div class="count">${escapeHtml(tr('Cargando actividad…', 'Loading activity…'))}</div>
+      </div>
+    </div>
+  ` : '';
+
+  const content = `${metaBlock}<div class="record-detail">${rows.join('')}</div>`;
 
   openModal({
     title: isEditing ? `${tr('Editar registro', 'Edit record')} #${existingRecord.id}` : tr('Nuevo registro', 'New record'),
@@ -5224,6 +6912,31 @@ async function openRecordModal(existingRecord) {
     },
     width: '720px',
   });
+
+  if (isEditing) {
+    const activityList = document.getElementById('recordActivityList');
+    api(`/api/records/${existingRecord.id}/activity?limit=20`)
+      .then(payload => {
+        if (!activityList) return;
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        if (!items.length) {
+          activityList.innerHTML = `<div class="count">${escapeHtml(tr('Todavía no hay actividad registrada.', 'No activity logged yet.'))}</div>`;
+          return;
+        }
+        activityList.innerHTML = items.map(item => `
+          <div class="record-activity-item">
+            <strong>${escapeHtml(item.summary || tr('Cambio registrado', 'Change logged'))}</strong>
+            <span>${escapeHtml(formatDateTime(item.createdAt || ''))}</span>
+          </div>
+        `).join('');
+      })
+      .catch(error => {
+        console.error('No se pudo cargar la actividad del registro', error);
+        if (activityList) {
+          activityList.innerHTML = `<div class="count">${escapeHtml(tr('No se pudo cargar la actividad.', 'Could not load activity.'))}</div>`;
+        }
+      });
+  }
 
   /* ── Drag-and-drop reordering ── */
   const detail = document.querySelector('.record-detail');
@@ -5280,14 +6993,20 @@ async function openRecordModal(existingRecord) {
   }
 
   /* ── Attachment preview handlers in record modal ── */
-  [...document.querySelectorAll('.record-attachment-thumb[data-preview-url]')].forEach(thumb => {
+  [...document.querySelectorAll('[data-preview-url][data-preview-prop]')].forEach(thumb => {
     thumb.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       const fileUrl = thumb.getAttribute('data-preview-url') || '';
-      const fileName = thumb.getAttribute('data-preview-name') || '';
-      if (!fileUrl) return;
-      openImagePreviewModal(fileUrl, fileName);
+      const propId = Number(thumb.getAttribute('data-preview-prop') || 0);
+      if (!fileUrl || !propId) return;
+      openAttachmentBrowser({
+        recordId: existingRecord?.id,
+        propertyId: propId,
+        attachments: existingRecord?.attachments?.[propId] || [],
+        initialUrl: fileUrl,
+        title: STATE.selectedDatabase.properties.find(item => item.id === propId)?.name || '',
+      });
     });
   });
 
@@ -5297,17 +7016,14 @@ async function openRecordModal(existingRecord) {
       button.addEventListener('click', async () => {
         const propId = Number(button.getAttribute('data-upload-prop'));
         const input = document.getElementById(`upload-${propId}`);
-        const file = input.files[0];
-        if (!file) return;
+        const files = [...(input.files || [])];
+        if (!files.length) return;
 
         const uploadWrap = button.closest('.record-attachment-upload');
         uploadWrap?.classList.add('is-uploading');
         button.disabled = true;
-
-        const form = new FormData();
-        form.append('file', file);
         try {
-          await fetch(`/api/records/${existingRecord.id}/attachments/${propId}`, { method: 'POST', body: form });
+          await uploadAttachments(existingRecord.id, propId, files);
           await loadRecords();
           const freshRecord = STATE.records.find(record => record.id === existingRecord.id) || existingRecord;
           document.getElementById('modal').close();
@@ -5319,17 +7035,32 @@ async function openRecordModal(existingRecord) {
       });
     });
 
+    [...document.querySelectorAll('[data-open-browser]')].forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const propId = Number(button.getAttribute('data-open-browser') || 0);
+        if (!propId) return;
+        openAttachmentBrowser({
+          recordId: existingRecord.id,
+          propertyId: propId,
+          attachments: existingRecord.attachments?.[propId] || [],
+          title: STATE.selectedDatabase.properties.find(item => item.id === propId)?.name || '',
+        });
+      });
+    });
+
     /* ── Attachment delete handlers in record modal ── */
-    [...document.querySelectorAll('[data-delete-url]')].forEach(btn => {
+    [...document.querySelectorAll('[data-delete-id]')].forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const url = btn.getAttribute('data-delete-url');
+        const attachmentId = Number(btn.getAttribute('data-delete-id') || 0);
         openConfirmMini({
           message: t('deleteAttachmentConfirm'),
           confirmText: t('deleteAttachment'),
           danger: true,
           onConfirm: async () => {
-            await api('/api/attachments-by-url', { method: 'DELETE', body: { url } });
+            await api(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
             await loadRecords();
             await refreshBootstrap();
             const freshRecord = STATE.records.find(record => record.id === existingRecord.id) || existingRecord;
@@ -5351,26 +7082,41 @@ async function uploadHeaderImage(event) {
 
   const form = new FormData();
   form.append('image', file);
-  await fetch(`/api/databases/${STATE.selectedDatabaseId}/header-image`, {
+  const response = await fetch(`/api/databases/${STATE.selectedDatabaseId}/header-image`, {
     method: 'POST',
     body: form,
   });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload.error || tr('No se pudo actualizar la portada', 'Could not update the cover');
+    showToast(message, 'error', 3600);
+    throw new Error(message);
+  }
 
   STATE.selectedDatabase = await api(`/api/databases/${STATE.selectedDatabaseId}`);
   renderDatabaseHeader();
+  showToast(tr('Portada actualizada', 'Cover updated'), 'success');
+  setLastFeedback('success', tr('Portada guardada', 'Cover saved'));
+  event.target.value = '';
 }
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
     method: options.method || 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = payload.error || tr('Error de servidor', 'Server error');
-    openConfirmMini({ message, confirmText: 'OK' });
+    if (!options.silentError) {
+      showToast(message, 'error', 3600);
+      setLastFeedback('error', message, { timeoutMs: 3600 });
+    }
     throw new Error(message);
   }
 

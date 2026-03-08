@@ -1,83 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const os = require('node:os');
-const fs = require('node:fs');
-const { spawn } = require('node:child_process');
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function waitForHealth(baseUrl, timeoutMs = 10000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const response = await fetch(`${baseUrl}/healthz`);
-      if (response.ok) return;
-    } catch (_error) {
-      // ignore and retry
-    }
-    await sleep(150);
-  }
-  throw new Error(`Server did not become healthy at ${baseUrl} within ${timeoutMs}ms`);
-}
-
-function createApi(baseUrl) {
-  return async function api(pathname, method = 'GET', body) {
-    const response = await fetch(`${baseUrl}${pathname}`, {
-      method,
-      headers: body ? { 'content-type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(`${method} ${pathname} -> ${response.status}: ${JSON.stringify(payload)}`);
-    }
-    return payload;
-  };
-}
+const { startTestServer } = require('./test-helpers');
 
 test('relations and rollups behave like Notion basics', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dubydb-test-'));
-  const dataDir = path.join(tempRoot, 'data');
-  fs.mkdirSync(dataDir, { recursive: true });
-
-  const port = 7400 + Math.floor(Math.random() * 200);
-  const baseUrl = `http://127.0.0.1:${port}`;
-
-  const serverProcess = spawn(process.execPath, ['server.js'], {
-    cwd: path.resolve(__dirname, '..'),
-    env: {
-      ...process.env,
-      PORT: String(port),
-      HOST: '127.0.0.1',
-      DATA_DIR: dataDir,
-      DB_PATH: path.join(dataDir, 'test.db'),
-      UPLOADS_DIR: path.join(dataDir, 'uploads'),
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let stdout = '';
-  let stderr = '';
-  serverProcess.stdout.on('data', chunk => { stdout += String(chunk); });
-  serverProcess.stderr.on('data', chunk => { stderr += String(chunk); });
-
-  const stopServer = async () => {
-    if (!serverProcess.killed) {
-      serverProcess.kill('SIGTERM');
-      await sleep(120);
-      if (!serverProcess.killed) {
-        serverProcess.kill('SIGKILL');
-      }
-    }
-  };
+  const harness = await startTestServer('dubydb-test-', 7400);
+  const { api } = harness;
 
   try {
-    await waitForHealth(baseUrl);
-    const api = createApi(baseUrl);
-
     const dbProjects = await api('/api/databases', 'POST', { name: 'Projects' });
     const dbTasks = await api('/api/databases', 'POST', { name: 'Tasks' });
 
@@ -166,9 +95,9 @@ test('relations and rollups behave like Notion basics', async () => {
     assert.deepEqual(taskRow1AfterDelete.values[taskReciprocalRelation.key], []);
     assert.deepEqual(taskRow2AfterDelete.values[taskReciprocalRelation.key], []);
   } finally {
-    await stopServer();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    const stderr = harness.stderrRef();
+    const stdout = harness.stdoutRef();
+    await harness.stop();
+    assert.equal(stderr.includes('EADDRINUSE'), false, `Unexpected server bind conflict:\n${stderr}\n${stdout}`);
   }
-
-  assert.equal(stderr.includes('EADDRINUSE'), false, `Unexpected server bind conflict:\n${stderr}\n${stdout}`);
 });

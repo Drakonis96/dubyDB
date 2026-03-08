@@ -27,6 +27,113 @@ const HEADER_GRADIENTS = [
 
 const TAG_COLORS = ['yellow', 'orange', 'pink', 'red', 'violet', 'green', 'blue', 'gray', 'black', 'purple'];
 const PROPERTY_TYPES = new Set(['text', 'singleSelect', 'multiSelect', 'autoId', 'url', 'checkbox', 'date', 'time', 'attachment', 'relation', 'rollup']);
+const DATABASE_TEMPLATES = {
+  photoArchive: {
+    properties: [
+      { key: 'titulo', name: 'Título', type: 'text' },
+      { key: 'fecha_captura', name: 'Fecha de captura', type: 'date' },
+      { key: 'album', name: 'Álbum', type: 'singleSelect', config: { options: [{ label: 'Personal', color: 'green' }, { label: 'Trabajo', color: 'blue' }, { label: 'Viaje', color: 'orange' }] } },
+      { key: 'ubicacion', name: 'Ubicación', type: 'text' },
+      { key: 'autor', name: 'Autor', type: 'text' },
+      { key: 'etiquetas', name: 'Etiquetas', type: 'multiSelect', config: { options: [{ label: 'Retrato', color: 'pink' }, { label: 'Paisaje', color: 'green' }, { label: 'Evento', color: 'blue' }] } },
+      { key: 'archivos', name: 'Archivos', type: 'attachment' },
+      { key: 'notas', name: 'Notas', type: 'text' },
+    ],
+    views: [
+      { name: 'Tabla', type: 'table', config: { criteria: { sorts: [{ propertyKey: 'fecha_captura', dir: 'desc' }] } } },
+      { name: 'Galería', type: 'gallery', config: { criteria: { sorts: [{ propertyKey: 'fecha_captura', dir: 'desc' }] } } },
+      { name: 'Análisis', type: 'analysis', config: { xPropertyKey: 'album', frequencyPropertyKey: 'etiquetas', timelinePropertyKey: 'fecha_captura' } },
+    ],
+  },
+  bibliography: {
+    properties: [
+      { key: 'titulo', name: 'Título', type: 'text' },
+      { key: 'autores', name: 'Autores', type: 'text' },
+      { key: 'estado', name: 'Estado', type: 'singleSelect', config: { options: [{ label: 'Pendiente', color: 'yellow' }, { label: 'Leyendo', color: 'blue' }, { label: 'Leído', color: 'green' }] } },
+      { key: 'tema', name: 'Tema', type: 'multiSelect', config: { options: [{ label: 'Teoría', color: 'violet' }, { label: 'Métodos', color: 'blue' }, { label: 'Caso de estudio', color: 'orange' }] } },
+      { key: 'ano', name: 'Fecha de publicación', type: 'date' },
+      { key: 'doi', name: 'DOI / URL', type: 'url' },
+      { key: 'pdf', name: 'PDF', type: 'attachment' },
+      { key: 'notas', name: 'Notas', type: 'text' },
+    ],
+    views: [
+      { name: 'Tabla', type: 'table', config: { criteria: { sorts: [{ propertyKey: 'ano', dir: 'desc' }] } } },
+      { name: 'Galería', type: 'gallery', config: {} },
+      { name: 'Análisis', type: 'analysis', config: { xPropertyKey: 'estado', frequencyPropertyKey: 'tema', timelinePropertyKey: 'ano' } },
+    ],
+  },
+  inventory: {
+    properties: [
+      { key: 'titulo', name: 'Artículo', type: 'text' },
+      { key: 'categoria', name: 'Categoría', type: 'singleSelect', config: { options: [{ label: 'Equipo', color: 'blue' }, { label: 'Consumible', color: 'orange' }, { label: 'Mobiliario', color: 'green' }] } },
+      { key: 'estado', name: 'Estado', type: 'singleSelect', config: { options: [{ label: 'Disponible', color: 'green' }, { label: 'Reservado', color: 'yellow' }, { label: 'Baja', color: 'red' }] } },
+      { key: 'cantidad', name: 'Cantidad', type: 'text' },
+      { key: 'tamano_lote', name: 'Tamaño de lote', type: 'text' },
+      { key: 'fecha_compra', name: 'Fecha de compra', type: 'date' },
+      { key: 'archivos', name: 'Archivos', type: 'attachment' },
+      { key: 'ubicacion', name: 'Ubicación', type: 'text' },
+    ],
+    views: [
+      { name: 'Tabla', type: 'table', config: { criteria: { groupByPropertyKey: 'categoria', sorts: [{ propertyKey: 'estado', dir: 'asc' }] } } },
+      { name: 'Galería', type: 'gallery', config: {} },
+      { name: 'Análisis', type: 'analysis', config: { xPropertyKey: 'categoria', distributionPropertyKey: 'cantidad', timelinePropertyKey: 'fecha_compra' } },
+    ],
+  },
+  simpleCrm: {
+    properties: [
+      { key: 'titulo', name: 'Cuenta / lead', type: 'text' },
+      { key: 'etapa', name: 'Etapa', type: 'singleSelect', config: { options: [{ label: 'Nuevo', color: 'blue' }, { label: 'Contactado', color: 'orange' }, { label: 'Propuesta', color: 'violet' }, { label: 'Ganado', color: 'green' }, { label: 'Perdido', color: 'red' }] } },
+      { key: 'contacto', name: 'Contacto', type: 'text' },
+      { key: 'email', name: 'Email / URL', type: 'url' },
+      { key: 'origen', name: 'Origen', type: 'singleSelect', config: { options: [{ label: 'Inbound', color: 'green' }, { label: 'Referral', color: 'blue' }, { label: 'Outbound', color: 'orange' }] } },
+      { key: 'valor_estimado', name: 'Valor estimado', type: 'text' },
+      { key: 'siguiente_contacto', name: 'Siguiente contacto', type: 'date' },
+      { key: 'adjuntos', name: 'Adjuntos', type: 'attachment' },
+      { key: 'notas', name: 'Notas', type: 'text' },
+    ],
+    views: [
+      { name: 'Pipeline', type: 'table', config: { criteria: { groupByPropertyKey: 'etapa', sorts: [{ propertyKey: 'siguiente_contacto', dir: 'asc' }] } } },
+      { name: 'Galería', type: 'gallery', config: {} },
+      { name: 'Análisis', type: 'analysis', config: { xPropertyKey: 'etapa', distributionPropertyKey: 'valor_estimado', timelinePropertyKey: 'siguiente_contacto' } },
+    ],
+  },
+  projectManager: {
+    properties: [
+      { key: 'titulo', name: 'Tarea', type: 'text' },
+      { key: 'estado', name: 'Estado', type: 'singleSelect', config: { options: [{ label: 'Backlog', color: 'gray' }, { label: 'En curso', color: 'blue' }, { label: 'Bloqueada', color: 'red' }, { label: 'Hecha', color: 'green' }] } },
+      { key: 'prioridad', name: 'Prioridad', type: 'singleSelect', config: { options: [{ label: 'Alta', color: 'red' }, { label: 'Media', color: 'yellow' }, { label: 'Baja', color: 'green' }] } },
+      { key: 'responsable', name: 'Responsable', type: 'text' },
+      { key: 'fecha_inicio', name: 'Fecha inicio', type: 'date' },
+      { key: 'fecha_fin', name: 'Fecha fin', type: 'date' },
+      { key: 'etiquetas', name: 'Etiquetas', type: 'multiSelect', config: { options: [{ label: 'Frontend', color: 'blue' }, { label: 'Backend', color: 'green' }, { label: 'Diseño', color: 'pink' }] } },
+      { key: 'adjuntos', name: 'Adjuntos', type: 'attachment' },
+      { key: 'notas', name: 'Notas', type: 'text' },
+    ],
+    views: [
+      { name: 'Tabla', type: 'table', config: { criteria: { groupByPropertyKey: 'estado', sorts: [{ propertyKey: 'prioridad', dir: 'asc' }, { propertyKey: 'fecha_fin', dir: 'asc' }] } } },
+      { name: 'Galería', type: 'gallery', config: {} },
+      { name: 'Análisis', type: 'analysis', config: { xPropertyKey: 'estado', frequencyPropertyKey: 'etiquetas', timelinePropertyKey: 'fecha_fin' } },
+    ],
+  },
+  researchDataset: {
+    properties: [
+      { key: 'titulo', name: 'Muestra / registro', type: 'text' },
+      { key: 'estado', name: 'Estado', type: 'singleSelect', config: { options: [{ label: 'Borrador', color: 'gray' }, { label: 'Validado', color: 'green' }, { label: 'Revisar', color: 'yellow' }] } },
+      { key: 'fuente', name: 'Fuente', type: 'url' },
+      { key: 'fecha_recoleccion', name: 'Fecha de recolección', type: 'date' },
+      { key: 'variable_principal', name: 'Variable principal', type: 'text' },
+      { key: 'etiquetas', name: 'Etiquetas', type: 'multiSelect', config: { options: [{ label: 'Cuantitativo', color: 'blue' }, { label: 'Cualitativo', color: 'violet' }, { label: 'Control', color: 'green' }] } },
+      { key: 'archivos', name: 'Archivos', type: 'attachment' },
+      { key: 'nulo_critico', name: 'Nulo crítico', type: 'checkbox' },
+      { key: 'notas', name: 'Notas', type: 'text' },
+    ],
+    views: [
+      { name: 'Tabla', type: 'table', config: { criteria: { sorts: [{ propertyKey: 'fecha_recoleccion', dir: 'desc' }] } } },
+      { name: 'Galería', type: 'gallery', config: {} },
+      { name: 'Análisis', type: 'analysis', config: { xPropertyKey: 'estado', frequencyPropertyKey: 'etiquetas', timelinePropertyKey: 'fecha_recoleccion' } },
+    ],
+  },
+};
 const DEFAULT_APP_SETTINGS = {
   ui: {
     language: 'en',
@@ -45,6 +152,8 @@ const DEFAULT_APP_SETTINGS = {
     endpoints: [],
   },
 };
+const BACKUP_VERSION = 2;
+const API_KEY_SCOPES = ['*', 'read', 'write', 'analytics', 'settings', 'backup'];
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -151,6 +260,11 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_databases_folder ON databases(folder_id);
 CREATE INDEX IF NOT EXISTS idx_properties_db ON properties(database_id, position);
 CREATE INDEX IF NOT EXISTS idx_records_db ON records(database_id, id DESC);
@@ -159,12 +273,98 @@ CREATE INDEX IF NOT EXISTS idx_attachments_record ON attachments(record_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_event ON webhook_deliveries(event_name, created_at DESC);
 `);
 
-function ensureViewsPositionColumn() {
-  const columns = db.prepare('PRAGMA table_info(database_views)').all();
-  const hasPosition = columns.some(column => column.name === 'position');
-  if (!hasPosition) {
-    db.exec('ALTER TABLE database_views ADD COLUMN position INTEGER NOT NULL DEFAULT 0');
+function runMigration(name, migrateFn) {
+  const existing = db.prepare('SELECT name FROM schema_migrations WHERE name = ?').get(name);
+  if (existing) return false;
+
+  const tx = db.transaction(() => {
+    migrateFn();
+    db.prepare('INSERT INTO schema_migrations(name, applied_at) VALUES(?, ?)').run(name, new Date().toISOString());
+  });
+  tx();
+  return true;
+}
+
+function tableExists(tableName, schemaName = 'main') {
+  const row = db.prepare(`
+    SELECT name
+    FROM ${schemaName}.sqlite_master
+    WHERE type = 'table' AND name = ?
+  `).get(tableName);
+  return Boolean(row);
+}
+
+function databaseIsAttached(schemaName) {
+  return db.prepare('PRAGMA database_list').all().some(row => row.name === schemaName);
+}
+
+function seedMissingSchemaMigrations() {
+  const existingNames = new Set(
+    db.prepare('SELECT name FROM schema_migrations').all().map(row => String(row.name || '')),
+  );
+  const seed = db.prepare('INSERT INTO schema_migrations(name, applied_at) VALUES(?, ?)');
+  const ts = new Date().toISOString();
+
+  if (db.prepare('PRAGMA table_info(database_views)').all().some(column => column.name === 'position')
+      && !existingNames.has('20260308_database_views_position')) {
+    seed.run('20260308_database_views_position', ts);
+    existingNames.add('20260308_database_views_position');
   }
+
+  if (db.prepare('PRAGMA table_info(databases)').all().some(column => column.name === 'api_code')
+      && !existingNames.has('20260308_databases_api_code')) {
+    seed.run('20260308_databases_api_code', ts);
+    existingNames.add('20260308_databases_api_code');
+  }
+}
+
+seedMissingSchemaMigrations();
+
+runMigration('20260308_activity_log', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      database_id INTEGER,
+      record_id INTEGER,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      action TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_activity_log_database_date ON activity_log(database_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_activity_log_record_date ON activity_log(record_id, created_at DESC, id DESC);
+  `);
+});
+
+runMigration('20260308_api_key_usage_logs', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS api_key_usage_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      status_code INTEGER,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_api_key_usage_logs_key_date ON api_key_usage_logs(api_key_id, created_at DESC, id DESC);
+  `);
+});
+
+function ensureViewsPositionColumn() {
+  runMigration('20260308_database_views_position', () => {
+    const columns = db.prepare('PRAGMA table_info(database_views)').all();
+    const hasPosition = columns.some(column => column.name === 'position');
+    if (!hasPosition) {
+      db.exec('ALTER TABLE database_views ADD COLUMN position INTEGER NOT NULL DEFAULT 0');
+    }
+  });
 
   const databasesWithViews = db.prepare('SELECT DISTINCT database_id FROM database_views').all();
   const updateStmt = db.prepare('UPDATE database_views SET position = ? WHERE id = ?');
@@ -210,11 +410,13 @@ function generateUniqueDatabaseCode() {
 }
 
 function ensureDatabaseApiCodeColumn() {
-  const columns = db.prepare('PRAGMA table_info(databases)').all();
-  const hasApiCode = columns.some(column => column.name === 'api_code');
-  if (!hasApiCode) {
-    db.exec('ALTER TABLE databases ADD COLUMN api_code TEXT');
-  }
+  runMigration('20260308_databases_api_code', () => {
+    const columns = db.prepare('PRAGMA table_info(databases)').all();
+    const hasApiCode = columns.some(column => column.name === 'api_code');
+    if (!hasApiCode) {
+      db.exec('ALTER TABLE databases ADD COLUMN api_code TEXT');
+    }
+  });
 
   const rows = db.prepare('SELECT id, api_code FROM databases ORDER BY id ASC').all();
   const seen = new Set();
@@ -292,6 +494,146 @@ function deepMerge(base, override) {
   return result;
 }
 
+function safeJsonStringify(value, fallback = '{}') {
+  try {
+    return JSON.stringify(value ?? {});
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function parseOptionalIsoDate(rawValue) {
+  if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+  const text = String(rawValue).trim();
+  if (!text) return null;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function normalizeApiKeyScopes(rawScopes, options = {}) {
+  const defaultAll = options.defaultAll !== false;
+  const items = Array.isArray(rawScopes)
+    ? rawScopes
+    : (typeof rawScopes === 'string' && rawScopes.trim()
+      ? rawScopes.split(',')
+      : []);
+
+  const normalized = [...new Set(items
+    .map(item => String(item || '').trim().toLowerCase())
+    .filter(scope => API_KEY_SCOPES.includes(scope)))];
+
+  if (normalized.includes('*')) return ['*'];
+  if (!normalized.length) return defaultAll ? ['*'] : [];
+  return normalized;
+}
+
+function isApiKeyExpired(entry) {
+  const expiresAt = parseOptionalIsoDate(entry?.expiresAt);
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() <= Date.now();
+}
+
+function isApiKeyActive(entry) {
+  return Boolean(entry) && !entry.revokedAt && !isApiKeyExpired(entry);
+}
+
+function getApiKeyUsageStats(keyIds = []) {
+  const ids = [...new Set(keyIds.map(item => String(item || '').trim()).filter(Boolean))];
+  if (!ids.length || !tableExists('api_key_usage_logs')) return new Map();
+
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT api_key_id, COUNT(*) AS usage_count, MAX(created_at) AS last_used_at
+    FROM api_key_usage_logs
+    WHERE api_key_id IN (${placeholders})
+    GROUP BY api_key_id
+  `).all(...ids);
+
+  return new Map(rows.map(row => [String(row.api_key_id), {
+    usageCount: Number(row.usage_count || 0),
+    lastUsedAt: row.last_used_at || null,
+  }]));
+}
+
+function recordApiKeyUsage(entry) {
+  if (!entry?.apiKeyId || !tableExists('api_key_usage_logs')) return;
+  db.prepare(`
+    INSERT INTO api_key_usage_logs(api_key_id, scope, method, path, status_code, ip_address, user_agent, created_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    String(entry.apiKeyId),
+    String(entry.scope || 'read'),
+    String(entry.method || 'GET').slice(0, 16),
+    String(entry.path || '/').slice(0, 300),
+    entry.statusCode == null ? null : Number(entry.statusCode),
+    entry.ipAddress ? String(entry.ipAddress).slice(0, 120) : null,
+    entry.userAgent ? String(entry.userAgent).slice(0, 500) : null,
+    nowIso(),
+  );
+}
+
+function getRequiredApiKeyScope(req) {
+  const method = String(req.method || 'GET').toUpperCase();
+  const pathname = String(req.originalUrl || req.url || '').split('?')[0];
+
+  if (pathname.startsWith('/api/settings')) return 'settings';
+  if (pathname.startsWith('/api/backup/')
+      || pathname === '/api/restore'
+      || pathname === '/api/danger/purge-all'
+      || /\/api\/databases\/[^/]+\/(backup|export)$/.test(pathname)) {
+    return 'backup';
+  }
+  if (/\/analysis$/.test(pathname)) return 'analytics';
+  if (method === 'GET' || method === 'HEAD') return 'read';
+  return 'write';
+}
+
+function isRequestAllowedByApiKeyScope(entry, requiredScope) {
+  const scopes = new Set(normalizeApiKeyScopes(entry?.scopes));
+  if (scopes.has('*')) return true;
+  if (requiredScope === 'analytics' && scopes.has('read')) return true;
+  return scopes.has(requiredScope);
+}
+
+function logActivity(entry) {
+  if (!tableExists('activity_log')) return;
+  db.prepare(`
+    INSERT INTO activity_log(database_id, record_id, entity_type, entity_id, action, summary, payload_json, created_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    entry.databaseId == null ? null : Number(entry.databaseId),
+    entry.recordId == null ? null : Number(entry.recordId),
+    String(entry.entityType || 'system').slice(0, 60),
+    entry.entityId == null ? null : Number(entry.entityId),
+    String(entry.action || 'updated').slice(0, 80),
+    String(entry.summary || 'Actividad registrada').slice(0, 240),
+    safeJsonStringify(entry.payload || {}, '{}'),
+    nowIso(),
+  );
+}
+
+function listActivityRows(whereSql, args = [], limit = 40) {
+  if (!tableExists('activity_log')) return [];
+  return db.prepare(`
+    SELECT id, database_id, record_id, entity_type, entity_id, action, summary, payload_json, created_at
+    FROM activity_log
+    WHERE ${whereSql}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(...args, Math.min(200, Math.max(1, Number(limit || 40)))).map(row => ({
+    id: Number(row.id),
+    databaseId: row.database_id == null ? null : Number(row.database_id),
+    recordId: row.record_id == null ? null : Number(row.record_id),
+    entityType: row.entity_type,
+    entityId: row.entity_id == null ? null : Number(row.entity_id),
+    action: row.action,
+    summary: row.summary,
+    payload: parseJson(row.payload_json, {}),
+    createdAt: row.created_at,
+  }));
+}
+
 function sanitizeWebhookEndpoint(raw) {
   const input = raw && typeof raw === 'object' ? raw : {};
   const url = String(input.url || '').trim();
@@ -330,7 +672,9 @@ function sanitizeApiKeyEntry(raw) {
   const hash = String(input.hash || '').trim().toLowerCase();
   const createdAt = String(input.createdAt || '').trim();
   const revokedAtRaw = input.revokedAt == null ? null : String(input.revokedAt).trim();
+  const expiresAt = parseOptionalIsoDate(input.expiresAt);
   const label = String(input.label || '').trim() || null;
+  const scopes = normalizeApiKeyScopes(input.scopes);
 
   if (!id) return null;
   if (!prefix) return null;
@@ -345,6 +689,8 @@ function sanitizeApiKeyEntry(raw) {
     hash,
     createdAt,
     revokedAt: revokedAtRaw || null,
+    expiresAt,
+    scopes,
     label,
   };
 }
@@ -356,13 +702,14 @@ function hashApiKey(value, salt) {
     .digest('hex');
 }
 
-function createApiKeyEntry(label = null) {
+function createApiKeyEntry(label = null, options = {}) {
   const id = `key_${crypto.randomBytes(8).toString('hex')}`;
   const secretPart = crypto.randomBytes(24).toString('base64url');
   const key = `duby_${secretPart}`;
   const prefix = key.slice(0, 12);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashApiKey(key, salt);
+  const expiresAt = parseOptionalIsoDate(options.expiresAt);
   return {
     key,
     entry: {
@@ -372,6 +719,8 @@ function createApiKeyEntry(label = null) {
       hash,
       createdAt: nowIso(),
       revokedAt: null,
+      expiresAt,
+      scopes: normalizeApiKeyScopes(options.scopes),
       label: label ? String(label).trim().slice(0, 120) : null,
     },
   };
@@ -379,19 +728,25 @@ function createApiKeyEntry(label = null) {
 
 function countActiveApiKeys(apiSettings) {
   const entries = Array.isArray(apiSettings?.keyEntries) ? apiSettings.keyEntries : [];
-  return entries.filter(item => !item.revokedAt).length;
+  return entries.filter(item => isApiKeyActive(item)).length;
 }
 
 function toPublicAppSettings(settings) {
   const safe = settings || getAppSettings();
   const entries = Array.isArray(safe.api?.keyEntries) ? safe.api.keyEntries : [];
+  const usageStats = getApiKeyUsageStats(entries.map(item => item.id));
   const keyItems = entries.map(item => ({
     id: item.id,
     prefix: item.prefix,
     createdAt: item.createdAt,
     revokedAt: item.revokedAt,
-    active: !item.revokedAt,
+    expiresAt: item.expiresAt || null,
+    expired: isApiKeyExpired(item),
+    active: isApiKeyActive(item),
     label: item.label || null,
+    scopes: normalizeApiKeyScopes(item.scopes),
+    usageCount: Number(usageStats.get(item.id)?.usageCount || 0),
+    lastUsedAt: usageStats.get(item.id)?.lastUsedAt || null,
   }));
   return {
     ...safe,
@@ -408,7 +763,7 @@ function findMatchingApiKeyEntry(settings, incomingKey) {
   if (!incomingKey) return null;
   const entries = Array.isArray(settings?.api?.keyEntries) ? settings.api.keyEntries : [];
   for (const entry of entries) {
-    if (entry.revokedAt) continue;
+    if (!isApiKeyActive(entry)) continue;
     const incomingHash = hashApiKey(incomingKey, entry.salt);
     const expected = Buffer.from(entry.hash, 'hex');
     const actual = Buffer.from(incomingHash, 'hex');
@@ -532,9 +887,41 @@ function apiGuardMiddleware(req, res, next) {
   }
 
   const incomingKey = resolveApiKey(req);
-  if (!findMatchingApiKeyEntry(settings, incomingKey)) {
+  const matchedEntry = findMatchingApiKeyEntry(settings, incomingKey);
+  if (!matchedEntry) {
     return res.status(401).json({ error: 'API key inválida' });
   }
+
+  const requiredScope = getRequiredApiKeyScope(req);
+  if (!isRequestAllowedByApiKeyScope(matchedEntry, requiredScope)) {
+    recordApiKeyUsage({
+      apiKeyId: matchedEntry.id,
+      scope: requiredScope,
+      method: req.method,
+      path: String(req.originalUrl || req.url || '').split('?')[0],
+      statusCode: 403,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || '',
+    });
+    return res.status(403).json({ error: `La API key no tiene permiso para el scope "${requiredScope}"` });
+  }
+
+  req.apiKeyEntry = matchedEntry;
+  req.apiKeyScope = requiredScope;
+  let logged = false;
+  res.on('finish', () => {
+    if (logged) return;
+    logged = true;
+    recordApiKeyUsage({
+      apiKeyId: matchedEntry.id,
+      scope: requiredScope,
+      method: req.method,
+      path: String(req.originalUrl || req.url || '').split('?')[0],
+      statusCode: res.statusCode,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || '',
+    });
+  });
   return next();
 }
 
@@ -743,6 +1130,69 @@ function listAttachmentsByRecord(recordIds) {
     ...row,
     url: `/uploads/${row.storage_path}`,
   }));
+}
+
+function listRecentAttachmentsByDatabase(databaseId, limit = 6) {
+  return db.prepare(`
+    SELECT id, database_id, record_id, property_id, file_name, storage_path, mime_type, size_bytes, created_at
+    FROM attachments
+    WHERE database_id = ?
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(databaseId, Math.min(24, Math.max(1, Number(limit || 6)))).map(row => ({
+    ...row,
+    url: `/uploads/${row.storage_path}`,
+    downloadUrl: `/api/attachments/${row.id}/download`,
+  }));
+}
+
+function listBrokenRelationSummaries(databaseId) {
+  const props = listProperties(databaseId);
+  const issues = [];
+  const propById = new Map(props.map(prop => [Number(prop.id), prop]));
+
+  props.forEach(prop => {
+    if (prop.type === 'relation') {
+      const targetDbIds = getRelationTargetDatabaseIds(prop.config || {});
+      if (!targetDbIds.length) {
+        issues.push({ propertyId: prop.id, propertyName: prop.name, reason: 'missing_target_database' });
+      } else {
+        targetDbIds.forEach(targetDbId => {
+          if (!getDatabase(targetDbId)) {
+            issues.push({ propertyId: prop.id, propertyName: prop.name, reason: 'target_database_not_found', targetDbId });
+          }
+        });
+      }
+
+      const reciprocalPropertyId = Number(prop.config?.reciprocalPropertyId || 0);
+      if (reciprocalPropertyId) {
+        const reciprocalProp = db.prepare('SELECT id, database_id, type FROM properties WHERE id = ?').get(reciprocalPropertyId);
+        if (!reciprocalProp) {
+          issues.push({ propertyId: prop.id, propertyName: prop.name, reason: 'reciprocal_missing', reciprocalPropertyId });
+        } else if (reciprocalProp.type !== 'relation') {
+          issues.push({ propertyId: prop.id, propertyName: prop.name, reason: 'reciprocal_invalid_type', reciprocalPropertyId });
+        }
+      }
+    }
+
+    if (prop.type === 'rollup') {
+      const relationPropertyId = Number(prop.config?.relationPropertyId || 0);
+      const relatedPropertyId = Number(prop.config?.relatedPropertyId || 0);
+      const relationProp = propById.get(relationPropertyId);
+      if (!relationProp || relationProp.type !== 'relation') {
+        issues.push({ propertyId: prop.id, propertyName: prop.name, reason: 'rollup_relation_missing', relationPropertyId });
+        return;
+      }
+
+      const relatedProp = db.prepare('SELECT id, database_id FROM properties WHERE id = ?').get(relatedPropertyId);
+      const relatedDbIds = getRelationTargetDatabaseIds(relationProp.config || {});
+      if (!relatedProp || !relatedDbIds.includes(Number(relatedProp.database_id))) {
+        issues.push({ propertyId: prop.id, propertyName: prop.name, reason: 'rollup_target_missing', relatedPropertyId });
+      }
+    }
+  });
+
+  return issues;
 }
 
 function loadRecordRows(databaseId) {
@@ -969,42 +1419,218 @@ function compareValues(a, b) {
   return String(a).localeCompare(String(b), 'es', { sensitivity: 'base' });
 }
 
-function filterRecord(renderRecord, filters, props) {
-  if (!Array.isArray(filters) || !filters.length) return true;
-
-  const propById = new Map(props.map(p => [p.id, p]));
-
-  return filters.every(filter => {
-    const prop = propById.get(Number(filter.propertyId));
-    if (!prop) return true;
-
-    const raw = renderRecord.values[prop.key];
-    const value = Array.isArray(raw) ? raw : [raw];
-    const normalized = value.map(v => (v === null || v === undefined) ? '' : String(v).toLowerCase());
-    const target = String(filter.value ?? '').toLowerCase();
-
-    switch (filter.operator) {
-      case 'equals': return normalized.some(v => v === target);
-      case 'notEquals': return normalized.every(v => v !== target);
-      case 'contains': return normalized.some(v => v.includes(target));
-      case 'notContains': return normalized.every(v => !v.includes(target));
-      case 'isEmpty': return normalized.every(v => v === '');
-      case 'isNotEmpty': return normalized.some(v => v !== '');
-      case 'checked': return Boolean(raw) === true;
-      case 'unchecked': return Boolean(raw) === false;
-      case 'before': return String(raw || '') < String(filter.value || '');
-      case 'after': return String(raw || '') > String(filter.value || '');
-      default: return true;
-    }
-  });
+function buildDefaultDatabaseBlueprint() {
+  return {
+    properties: [
+      { key: 'titulo', name: 'Título', type: 'text' },
+    ],
+    views: [
+      { name: 'Tabla', type: 'table', config: {} },
+      { name: 'Galería', type: 'gallery', config: {} },
+      { name: 'Análisis', type: 'analysis', config: {} },
+    ],
+  };
 }
 
-function computeChart(databaseId, config = {}) {
-  const props = listProperties(databaseId);
-  const rows = loadRecordRows(databaseId);
-  applyRollups(databaseId, rows);
-  const records = rows.map(row => toRenderableRecord(databaseId, row, props));
+function getDatabaseTemplate(templateKey) {
+  const key = String(templateKey || '').trim();
+  return DATABASE_TEMPLATES[key] || null;
+}
 
+function deepClone(value) {
+  return parseJson(JSON.stringify(value), value);
+}
+
+function resolveTemplateViewConfig(value, propertyIdByKey) {
+  if (Array.isArray(value)) {
+    return value.map(item => resolveTemplateViewConfig(item, propertyIdByKey));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const out = {};
+  Object.entries(value).forEach(([key, entry]) => {
+    if (key === 'propertyKey') {
+      out.propertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    if (key === 'groupByPropertyKey') {
+      out.groupByPropertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    if (key === 'xPropertyKey') {
+      out.xPropertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    if (key === 'yPropertyKey') {
+      out.yPropertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    if (key === 'frequencyPropertyKey') {
+      out.frequencyPropertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    if (key === 'timelinePropertyKey') {
+      out.timelinePropertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    if (key === 'distributionPropertyKey') {
+      out.distributionPropertyId = Number(propertyIdByKey.get(String(entry || '')) || 0) || null;
+      return;
+    }
+    out[key] = resolveTemplateViewConfig(entry, propertyIdByKey);
+  });
+  return out;
+}
+
+function buildDatabaseBlueprint(templateKey) {
+  const template = getDatabaseTemplate(templateKey);
+  return deepClone(template || buildDefaultDatabaseBlueprint());
+}
+
+function normalizeFilterRule(rule, validPropertyIds) {
+  const propertyId = Number(rule?.propertyId || 0);
+  if (!validPropertyIds.has(propertyId)) return null;
+
+  const operator = String(rule?.operator || 'contains');
+  return {
+    propertyId,
+    operator,
+    value: rule?.value === null || rule?.value === undefined ? '' : String(rule.value),
+    valueTo: rule?.valueTo === null || rule?.valueTo === undefined ? '' : String(rule.valueTo),
+  };
+}
+
+function normalizeFilterCriteria(filters, props) {
+  const validPropertyIds = new Set((props || []).map(prop => Number(prop.id)));
+
+  if (Array.isArray(filters)) {
+    const rules = filters
+      .map(item => normalizeFilterRule(item, validPropertyIds))
+      .filter(Boolean);
+    return {
+      logic: 'and',
+      groups: rules.length ? [{ logic: 'and', rules }] : [],
+    };
+  }
+
+  if (!filters || typeof filters !== 'object') {
+    return { logic: 'and', groups: [] };
+  }
+
+  const logic = String(filters.logic || 'and').toLowerCase() === 'or' ? 'or' : 'and';
+  const groups = Array.isArray(filters.groups)
+    ? filters.groups
+      .map(group => {
+        const rules = Array.isArray(group?.rules)
+          ? group.rules.map(rule => normalizeFilterRule(rule, validPropertyIds)).filter(Boolean)
+          : [];
+        if (!rules.length) return null;
+        return {
+          logic: String(group?.logic || 'and').toLowerCase() === 'or' ? 'or' : 'and',
+          rules,
+        };
+      })
+      .filter(Boolean)
+    : [];
+
+  return { logic, groups };
+}
+
+function extractRuleValues(renderRecord, prop) {
+  if (prop.type === 'attachment') {
+    const files = (renderRecord.attachments && renderRecord.attachments[prop.id]) || [];
+    return files.map(file => ({
+      text: [file.file_name, file.mime_type, file.storage_path].filter(Boolean).join(' ').toLowerCase(),
+      date: String(file.created_at || ''),
+      number: Number(file.size_bytes || 0),
+    }));
+  }
+
+  const raw = renderRecord.values[prop.key];
+  const values = Array.isArray(raw) ? raw : [raw];
+  return values.map(item => ({
+    text: item === null || item === undefined ? '' : String(item).toLowerCase(),
+    raw: item,
+  }));
+}
+
+function isRuleEmpty(renderRecord, prop) {
+  if (prop.type === 'attachment') {
+    const files = (renderRecord.attachments && renderRecord.attachments[prop.id]) || [];
+    return files.length === 0;
+  }
+
+  const raw = renderRecord.values[prop.key];
+  if (Array.isArray(raw)) {
+    return raw.length === 0 || raw.every(item => item === null || item === undefined || String(item).trim() === '');
+  }
+  return raw === null || raw === undefined || String(raw).trim() === '';
+}
+
+function matchesRule(renderRecord, rule, prop) {
+  const raw = renderRecord.values[prop.key];
+  const values = extractRuleValues(renderRecord, prop);
+  const target = String(rule.value || '').toLowerCase();
+  const targetTo = String(rule.valueTo || '').toLowerCase();
+
+  switch (rule.operator) {
+    case 'equals':
+      return values.some(item => item.text === target);
+    case 'notEquals':
+      return values.every(item => item.text !== target);
+    case 'contains':
+      return values.some(item => item.text.includes(target));
+    case 'notContains':
+      return values.every(item => !item.text.includes(target));
+    case 'isEmpty':
+      return isRuleEmpty(renderRecord, prop);
+    case 'isNotEmpty':
+      return !isRuleEmpty(renderRecord, prop);
+    case 'checked':
+      return Boolean(raw) === true;
+    case 'unchecked':
+      return Boolean(raw) === false;
+    case 'before':
+      return String(raw || '').toLowerCase() < target;
+    case 'after':
+      return String(raw || '').toLowerCase() > target;
+    case 'between': {
+      const current = String(raw || '').toLowerCase();
+      if (!current) return false;
+      if (target && current < target) return false;
+      if (targetTo && current > targetTo) return false;
+      return true;
+    }
+    default:
+      return true;
+  }
+}
+
+function filterRecord(renderRecord, filters, props) {
+  const criteria = normalizeFilterCriteria(filters, props);
+  if (!criteria.groups.length) return true;
+
+  const propById = new Map(props.map(prop => [Number(prop.id), prop]));
+  const groupResults = criteria.groups.map(group => {
+    const results = group.rules.map(rule => {
+      const prop = propById.get(Number(rule.propertyId));
+      if (!prop) return true;
+      return matchesRule(renderRecord, rule, prop);
+    });
+
+    return group.logic === 'or'
+      ? results.some(Boolean)
+      : results.every(Boolean);
+  });
+
+  return criteria.logic === 'or'
+    ? groupResults.some(Boolean)
+    : groupResults.every(Boolean);
+}
+
+function computeChartFromRecords(records, props, config = {}) {
   const xProp = props.find(p => p.id === Number(config.xPropertyId));
   const yProp = props.find(p => p.id === Number(config.yPropertyId));
   if (!xProp) return { labels: [], datasets: [] };
@@ -1044,12 +1670,226 @@ function computeChart(databaseId, config = {}) {
   };
 }
 
-function computeChiSquare(databaseId, propAId, propBId) {
-  const props = listProperties(databaseId);
+function computeChart(databaseId, config = {}, sourceRecords = null, sourceProps = null) {
+  const props = sourceProps || listProperties(databaseId);
+  const records = sourceRecords || (() => {
+    const rows = loadRecordRows(databaseId);
+    applyRollups(databaseId, rows);
+    return rows.map(row => toRenderableRecord(databaseId, row, props));
+  })();
+
+  return computeChartFromRecords(records, props, config);
+}
+
+function recordMatchesSearch(record, props, search) {
+  const needle = String(search || '').trim().toLowerCase();
+  if (!needle) return true;
+
+  return props.some(prop => {
+    const value = record.values[prop.key];
+    if (Array.isArray(value)) return value.join(' ').toLowerCase().includes(needle);
+    return String(value || '').toLowerCase().includes(needle);
+  });
+}
+
+function normalizeRequestedSorts(requestedSorts, sortPropertyId = 0, sortDir = 'desc') {
+  const normalized = Array.isArray(requestedSorts)
+    ? requestedSorts
+      .map(item => ({
+        propertyId: Number(item?.propertyId || 0),
+        dir: String(item?.dir || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc',
+      }))
+      .filter(item => item.propertyId)
+    : [];
+
+  if (!normalized.length && Number(sortPropertyId || 0)) {
+    normalized.push({
+      propertyId: Number(sortPropertyId),
+      dir: String(sortDir || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc',
+    });
+  }
+
+  return normalized;
+}
+
+function sortRenderableRecords(records, props, requestedSorts = []) {
+  const normalizedSorts = normalizeRequestedSorts(requestedSorts);
+  if (!normalizedSorts.length) return records;
+
+  const sortMeta = normalizedSorts
+    .map(item => ({
+      dir: item.dir,
+      prop: props.find(prop => prop.id === item.propertyId),
+    }))
+    .filter(item => item.prop);
+
+  if (!sortMeta.length) return records;
+
+  return [...records].sort((a, b) => {
+    for (const item of sortMeta) {
+      const av = a.values[item.prop.key];
+      const bv = b.values[item.prop.key];
+      const va = Array.isArray(av) ? av.join(', ') : av;
+      const vb = Array.isArray(bv) ? bv.join(', ') : bv;
+      const cmp = compareValues(va, vb);
+      if (cmp !== 0) return item.dir === 'asc' ? cmp : -cmp;
+    }
+    return compareValues(a.id, b.id);
+  });
+}
+
+function loadRenderableRecords(databaseId, props = listProperties(databaseId)) {
   const rows = loadRecordRows(databaseId);
   applyRollups(databaseId, rows);
-  const records = rows.map(row => toRenderableRecord(databaseId, row, props));
+  return rows.map(row => toRenderableRecord(databaseId, row, props));
+}
 
+function numericValuesForProperty(records, prop) {
+  if (!prop) return [];
+  return records
+    .map(record => record.values[prop.key])
+    .flatMap(value => Array.isArray(value) ? value : [value])
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value));
+}
+
+function computeNullSummary(records, props) {
+  return props.map(prop => {
+    let nullCount = 0;
+    records.forEach(record => {
+      if (isRuleEmpty(record, prop)) nullCount += 1;
+    });
+    const total = records.length;
+    const filled = total - nullCount;
+    return {
+      propertyId: prop.id,
+      propertyName: prop.name,
+      nullCount,
+      filledCount: filled,
+      fillRate: total ? Number(((filled / total) * 100).toFixed(2)) : 0,
+    };
+  });
+}
+
+function computeCategoryCounts(records, prop) {
+  if (!prop) return null;
+  const groups = new Map();
+  records.forEach(record => {
+    const raw = record.values[prop.key];
+    const values = Array.isArray(raw) ? raw : [raw];
+    const effective = values.filter(item => item !== null && item !== undefined && String(item).trim() !== '');
+    if (!effective.length) {
+      groups.set('(vacío)', (groups.get('(vacío)') || 0) + 1);
+      return;
+    }
+    effective.forEach(item => {
+      const key = String(item);
+      groups.set(key, (groups.get(key) || 0) + 1);
+    });
+  });
+
+  return {
+    propertyId: prop.id,
+    propertyName: prop.name,
+    items: [...groups.entries()]
+      .sort((a, b) => b[1] - a[1] || compareValues(a[0], b[0]))
+      .map(([label, count]) => ({ label, count })),
+  };
+}
+
+function computeValueDistribution(records, prop) {
+  const values = numericValuesForProperty(records, prop);
+  if (!prop || !values.length) return null;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const avg = values.reduce((acc, value) => acc + value, 0) / values.length;
+
+  if (min === max) {
+    return {
+      propertyId: prop.id,
+      propertyName: prop.name,
+      summary: { min, max, avg: Number(avg.toFixed(3)) },
+      buckets: [{ label: String(min), count: values.length }],
+    };
+  }
+
+  const bucketCount = Math.min(8, Math.max(4, Math.round(Math.sqrt(values.length))));
+  const bucketSize = (max - min) / bucketCount;
+  const buckets = Array.from({ length: bucketCount }, (_item, index) => {
+    const start = min + bucketSize * index;
+    const end = index === bucketCount - 1 ? max : min + bucketSize * (index + 1);
+    return { start, end, count: 0 };
+  });
+
+  values.forEach(value => {
+    let index = Math.floor((value - min) / bucketSize);
+    if (index >= buckets.length) index = buckets.length - 1;
+    buckets[index].count += 1;
+  });
+
+  return {
+    propertyId: prop.id,
+    propertyName: prop.name,
+    summary: { min, max, avg: Number(avg.toFixed(3)) },
+    buckets: buckets.map(bucket => ({
+      label: `${bucket.start.toFixed(2)} - ${bucket.end.toFixed(2)}`,
+      count: bucket.count,
+    })),
+  };
+}
+
+function computeTimeline(records, prop, interval = 'month') {
+  if (!prop) return null;
+  const groups = new Map();
+
+  records.forEach(record => {
+    const raw = record.values[prop.key];
+    const text = String(Array.isArray(raw) ? raw[0] || '' : raw || '').trim();
+    if (!text) return;
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return;
+
+    const year = parsed.getUTCFullYear();
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getUTCDate()).padStart(2, '0');
+    const key = interval === 'day'
+      ? `${year}-${month}-${day}`
+      : `${year}-${month}`;
+    groups.set(key, (groups.get(key) || 0) + 1);
+  });
+
+  return {
+    propertyId: prop.id,
+    propertyName: prop.name,
+    interval: interval === 'day' ? 'day' : 'month',
+    points: [...groups.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'es'))
+      .map(([label, count]) => ({ label, count })),
+  };
+}
+
+function buildAnalysisInsights(records, props, config = {}) {
+  const categoryProp = props.find(prop => prop.id === Number(config.xPropertyId || 0)) || null;
+  const distributionProp = props.find(prop => prop.id === Number(config.distributionPropertyId || config.yPropertyId || 0)) || null;
+  const frequencyProp = props.find(prop => prop.id === Number(config.frequencyPropertyId || config.xPropertyId || 0))
+    || props.find(prop => prop.type === 'multiSelect')
+    || null;
+  const timelineProp = props.find(prop => prop.id === Number(config.timelinePropertyId || 0))
+    || props.find(prop => prop.type === 'date')
+    || null;
+
+  return {
+    totalRecords: records.length,
+    categoryCounts: computeCategoryCounts(records, categoryProp),
+    distribution: computeValueDistribution(records, distributionProp),
+    nullsByField: computeNullSummary(records, props),
+    tagFrequencies: frequencyProp ? computeCategoryCounts(records, frequencyProp) : null,
+    timeline: computeTimeline(records, timelineProp, config.timelineInterval || 'month'),
+  };
+}
+
+function computeChiSquareFromRecords(records, props, propAId, propBId) {
   const a = props.find(p => p.id === Number(propAId));
   const b = props.find(p => p.id === Number(propBId));
   if (!a || !b) return null;
@@ -1098,6 +1938,18 @@ function computeChiSquare(databaseId, propAId, propBId) {
   };
 }
 
+function computeChiSquare(databaseId, propAId, propBId, sourceRecords = null, sourceProps = null) {
+  const props = sourceProps || listProperties(databaseId);
+  const records = sourceRecords || loadRenderableRecords(databaseId, props);
+  return computeChiSquareFromRecords(records, props, propAId, propBId);
+}
+
+function createHttpError(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
 function sanitizePropertyConfig(type, config) {
   const next = { ...(config || {}) };
   if (type === 'singleSelect' || type === 'multiSelect') {
@@ -1130,6 +1982,335 @@ function sanitizePropertyConfig(type, config) {
   }
 
   return next;
+}
+
+function normalizeTextValue(rawValue) {
+  if (rawValue === null || rawValue === undefined) return null;
+  if (Array.isArray(rawValue)) {
+    const joined = rawValue.map(item => normalizeTextValue(item)).filter(Boolean).join(', ');
+    return joined || null;
+  }
+  if (typeof rawValue === 'object') {
+    const candidate = rawValue.label ?? rawValue.value ?? rawValue.name ?? rawValue.title;
+    if (candidate !== undefined) return normalizeTextValue(candidate);
+    return safeJsonStringify(rawValue, '{}');
+  }
+  const text = String(rawValue);
+  return text.trim() ? text : null;
+}
+
+function ensureValidDateValue(text, propName) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw createHttpError(`Fecha inválida para "${propName}". Usa YYYY-MM-DD.`);
+  }
+  const parsed = new Date(`${text}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw createHttpError(`Fecha inválida para "${propName}".`);
+  }
+  const normalized = parsed.toISOString().slice(0, 10);
+  if (normalized !== text) {
+    throw createHttpError(`Fecha inválida para "${propName}".`);
+  }
+  return text;
+}
+
+function ensureValidTimeValue(text, propName) {
+  if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
+    throw createHttpError(`Hora inválida para "${propName}". Usa HH:MM.`);
+  }
+  return text;
+}
+
+function ensureValidUrlValue(text, propName) {
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch (_error) {
+    throw createHttpError(`URL inválida para "${propName}".`);
+  }
+  if (!['http:', 'https:', 'mailto:', 'tel:'].includes(parsed.protocol)) {
+    throw createHttpError(`URL inválida para "${propName}".`);
+  }
+  return parsed.toString();
+}
+
+function normalizeStoredValueForProperty(prop, rawValue) {
+  if (!prop) return null;
+
+  if (prop.type === 'checkbox') return Boolean(rawValue);
+
+  if (prop.type === 'singleSelect') {
+    return normalizeImportedSelectItem(Array.isArray(rawValue) ? rawValue[0] : rawValue);
+  }
+
+  if (prop.type === 'multiSelect') {
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    return [...new Set(values.map(normalizeImportedSelectItem).filter(Boolean))];
+  }
+
+  if (prop.type === 'relation') {
+    return normalizeRelationValue(prop, rawValue);
+  }
+
+  if (prop.type === 'rollup') return [];
+  if (prop.type === 'attachment') return Array.isArray(rawValue) ? rawValue : [];
+
+  if (prop.type === 'url') {
+    const text = normalizeTextValue(Array.isArray(rawValue) ? rawValue[0] : rawValue);
+    if (!text) return null;
+    return ensureValidUrlValue(text, prop.name);
+  }
+
+  if (prop.type === 'date') {
+    const text = normalizeTextValue(Array.isArray(rawValue) ? rawValue[0] : rawValue);
+    if (!text) return null;
+    return ensureValidDateValue(text, prop.name);
+  }
+
+  if (prop.type === 'time') {
+    const text = normalizeTextValue(Array.isArray(rawValue) ? rawValue[0] : rawValue);
+    if (!text) return null;
+    return ensureValidTimeValue(text, prop.name);
+  }
+
+  if (prop.type === 'autoId') {
+    if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+    const num = Number(rawValue);
+    if (!Number.isFinite(num)) {
+      throw createHttpError(`ID automático inválido para "${prop.name}".`);
+    }
+    return num;
+  }
+
+  return normalizeTextValue(rawValue);
+}
+
+function revalidateStoredValuesForProperty(prop) {
+  if (!prop?.id) return;
+  const rows = db.prepare('SELECT record_id, value_json FROM record_values WHERE property_id = ?').all(prop.id);
+  const updateStmt = db.prepare(`
+    UPDATE record_values
+    SET value_json = ?
+    WHERE record_id = ? AND property_id = ?
+  `);
+  const touchRecordStmt = db.prepare('UPDATE records SET updated_at = ? WHERE id = ?');
+
+  rows.forEach(row => {
+    const currentValue = parseJson(row.value_json, null);
+    const normalizedValue = normalizeStoredValueForProperty(prop, currentValue);
+    if (safeJsonStringify(currentValue, 'null') !== safeJsonStringify(normalizedValue, 'null')) {
+      updateStmt.run(JSON.stringify(normalizedValue), row.record_id, prop.id);
+      touchRecordStmt.run(nowIso(), row.record_id);
+    }
+  });
+}
+
+function assertPropertyConfigIsValid(databaseId, type, config, options = {}) {
+  const propertyId = Number(options.propertyId || 0) || null;
+
+  if (type === 'relation') {
+    const targetDbIds = getRelationTargetDatabaseIds(config);
+    if (!targetDbIds.length) {
+      throw createHttpError('La relación debe apuntar al menos a una base de datos.');
+    }
+
+    targetDbIds.forEach(targetDbId => {
+      if (!getDatabase(targetDbId)) {
+        throw createHttpError('La relación apunta a una base de datos inexistente.');
+      }
+    });
+
+    const reciprocalPropertyId = Number(config.reciprocalPropertyId || 0);
+    if (reciprocalPropertyId) {
+      if (propertyId && reciprocalPropertyId === propertyId) {
+        throw createHttpError('La relación no puede apuntarse recíprocamente a sí misma.');
+      }
+      const reciprocal = db.prepare('SELECT id, database_id, type FROM properties WHERE id = ?').get(reciprocalPropertyId);
+      if (!reciprocal || reciprocal.type !== 'relation') {
+        throw createHttpError('La propiedad recíproca debe existir y ser de tipo relación.');
+      }
+      if (!targetDbIds.includes(Number(reciprocal.database_id))) {
+        throw createHttpError('La propiedad recíproca debe pertenecer a una base de datos relacionada.');
+      }
+    }
+  }
+
+  if (type === 'rollup') {
+    const relationPropertyId = Number(config.relationPropertyId || 0);
+    const relatedPropertyId = Number(config.relatedPropertyId || 0);
+    if (!relationPropertyId || !relatedPropertyId) {
+      throw createHttpError('El rollup necesita una relación y una propiedad relacionada válidas.');
+    }
+
+    const relationProp = db.prepare('SELECT id, database_id, type, config_json FROM properties WHERE id = ?').get(relationPropertyId);
+    if (!relationProp || Number(relationProp.database_id) !== Number(databaseId) || relationProp.type !== 'relation') {
+      throw createHttpError('La propiedad de relación del rollup no es válida.');
+    }
+
+    const relationConfig = parseJson(relationProp.config_json, {});
+    const relatedDbIds = getRelationTargetDatabaseIds(relationConfig);
+    const relatedProp = db.prepare('SELECT id, database_id FROM properties WHERE id = ?').get(relatedPropertyId);
+    if (!relatedProp || !relatedDbIds.includes(Number(relatedProp.database_id))) {
+      throw createHttpError('La propiedad relacionada del rollup no pertenece a las bases enlazadas.');
+    }
+  }
+}
+
+function cleanupPropertyConfigReferences(propertyId) {
+  const rows = db.prepare(`
+    SELECT id, type, config_json
+    FROM properties
+    WHERE type IN ('relation', 'rollup')
+  `).all();
+  const updateStmt = db.prepare('UPDATE properties SET config_json = ? WHERE id = ?');
+
+  rows.forEach(row => {
+    const config = sanitizePropertyConfig(row.type, parseJson(row.config_json, {}));
+    let changed = false;
+
+    if (row.type === 'relation' && Number(config.reciprocalPropertyId || 0) === Number(propertyId)) {
+      config.reciprocalPropertyId = null;
+      changed = true;
+    }
+
+    if (row.type === 'rollup') {
+      if (Number(config.relationPropertyId || 0) === Number(propertyId)) {
+        config.relationPropertyId = null;
+        changed = true;
+      }
+      if (Number(config.relatedPropertyId || 0) === Number(propertyId)) {
+        config.relatedPropertyId = null;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      updateStmt.run(JSON.stringify(config), row.id);
+    }
+  });
+}
+
+function repairRelationIntegrity(databaseId = null) {
+  const relationProps = databaseId == null
+    ? db.prepare(`
+      SELECT id, database_id, key, name, config_json
+      FROM properties
+      WHERE type = 'relation'
+    `).all().map(row => ({
+      ...row,
+      type: 'relation',
+      config: parseJson(row.config_json, {}),
+    }))
+    : listProperties(databaseId).filter(prop => prop.type === 'relation');
+
+  const updateValueStmt = db.prepare(`
+    UPDATE record_values
+    SET value_json = ?
+    WHERE record_id = ? AND property_id = ?
+  `);
+  const updateConfigStmt = db.prepare('UPDATE properties SET config_json = ? WHERE id = ?');
+  const touchRecordStmt = db.prepare('UPDATE records SET updated_at = ? WHERE id = ?');
+
+  relationProps.forEach(prop => {
+    const cfg = sanitizePropertyConfig('relation', prop.config || {});
+    let configChanged = false;
+    const reciprocalPropertyId = Number(cfg.reciprocalPropertyId || 0);
+    if (reciprocalPropertyId) {
+      const reciprocal = db.prepare('SELECT id, database_id, type FROM properties WHERE id = ?').get(reciprocalPropertyId);
+      if (!reciprocal
+          || reciprocal.type !== 'relation'
+          || !getRelationTargetDatabaseIds(cfg).includes(Number(reciprocal.database_id))) {
+        cfg.reciprocalPropertyId = null;
+        configChanged = true;
+      }
+    }
+
+    if (configChanged) {
+      updateConfigStmt.run(JSON.stringify(cfg), prop.id);
+      prop.config = cfg;
+    }
+
+    const rows = db.prepare('SELECT record_id, value_json FROM record_values WHERE property_id = ?').all(prop.id);
+    rows.forEach(row => {
+      const current = Array.isArray(parseJson(row.value_json, []))
+        ? parseJson(row.value_json, []).map(value => Number(value)).filter(Boolean)
+        : [];
+      const normalized = normalizeRelationValue(prop, current);
+      if (safeJsonStringify(current, '[]') !== safeJsonStringify(normalized, '[]')) {
+        updateValueStmt.run(JSON.stringify(normalized), row.record_id, prop.id);
+        touchRecordStmt.run(nowIso(), row.record_id);
+      }
+    });
+  });
+}
+
+function removeDeletedRecordReferences(recordId, databaseId) {
+  const relationProps = db.prepare(`
+    SELECT id, database_id, key, name, config_json
+    FROM properties
+    WHERE type = 'relation'
+  `).all().map(row => ({
+    ...row,
+    type: 'relation',
+    config: parseJson(row.config_json, {}),
+  })).filter(prop => getRelationTargetDatabaseIds(prop.config || {}).includes(Number(databaseId)));
+
+  const updateStmt = db.prepare(`
+    UPDATE record_values
+    SET value_json = ?
+    WHERE record_id = ? AND property_id = ?
+  `);
+  const touchRecordStmt = db.prepare('UPDATE records SET updated_at = ? WHERE id = ?');
+  const touchDatabaseStmt = db.prepare('UPDATE databases SET updated_at = ? WHERE id = ?');
+
+  relationProps.forEach(prop => {
+    const rows = db.prepare('SELECT record_id, value_json FROM record_values WHERE property_id = ?').all(prop.id);
+    rows.forEach(row => {
+      const current = Array.isArray(parseJson(row.value_json, []))
+        ? parseJson(row.value_json, []).map(value => Number(value)).filter(Boolean)
+        : [];
+      const next = current.filter(value => value !== Number(recordId));
+      if (safeJsonStringify(current, '[]') !== safeJsonStringify(next, '[]')) {
+        updateStmt.run(JSON.stringify(next), row.record_id, prop.id);
+        touchRecordStmt.run(nowIso(), row.record_id);
+        touchDatabaseStmt.run(nowIso(), prop.database_id);
+      }
+    });
+  });
+}
+
+function remapPropertyConfigReferences(type, config, propertyIdMap) {
+  const next = sanitizePropertyConfig(type, config);
+
+  if (type === 'relation') {
+    next.reciprocalPropertyId = Number(propertyIdMap.get(Number(next.reciprocalPropertyId || 0)) || 0) || null;
+  }
+
+  if (type === 'rollup') {
+    next.relationPropertyId = Number(propertyIdMap.get(Number(next.relationPropertyId || 0)) || 0) || null;
+    next.relatedPropertyId = Number(propertyIdMap.get(Number(next.relatedPropertyId || 0)) || 0) || null;
+  }
+
+  return next;
+}
+
+function remapConfigPropertyIds(value, propertyIdMap) {
+  if (Array.isArray(value)) {
+    return value.map(item => remapConfigPropertyIds(item, propertyIdMap));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const out = {};
+  Object.entries(value).forEach(([key, entry]) => {
+    if (/PropertyId$/.test(key)) {
+      out[key] = Number(propertyIdMap.get(Number(entry || 0)) || 0) || null;
+      return;
+    }
+    out[key] = remapConfigPropertyIds(entry, propertyIdMap);
+  });
+  return out;
 }
 
 function getPropertyOptions(databaseId, property) {
@@ -1172,6 +2353,25 @@ function getPropertyOptions(databaseId, property) {
     return options;
   }
 
+  if (property.type === 'relation') {
+    const relatedDbIds = getRelationTargetDatabaseIds(property.config || {});
+    const options = [];
+    relatedDbIds.forEach(relatedDbId => {
+      const relatedDb = getDatabase(relatedDbId);
+      if (!relatedDb) return;
+      const recordIds = db.prepare('SELECT id FROM records WHERE database_id = ? ORDER BY id DESC').all(relatedDbId);
+      recordIds.forEach(row => {
+        options.push({
+          value: String(row.id),
+          label: relatedDbIds.length > 1
+            ? `${relatedDb.name} · ${getRecordLabel(relatedDbId, row.id)}`
+            : getRecordLabel(relatedDbId, row.id),
+        });
+      });
+    });
+    return options;
+  }
+
   const values = new Set();
   const rows = db.prepare(`
     SELECT value_json FROM record_values rv
@@ -1191,9 +2391,10 @@ function getPropertyOptions(databaseId, property) {
   return [...values].sort((a, b) => a.localeCompare(b, 'es'));
 }
 
-const createDatabaseTx = db.transaction((name, folderId) => {
+const createDatabaseTx = db.transaction((name, folderId, options = {}) => {
   const ts = nowIso();
   const apiCode = generateUniqueDatabaseCode();
+  const blueprint = buildDatabaseBlueprint(options.templateKey);
   const insertDb = db.prepare(`
     INSERT INTO databases(name, api_code, folder_id, header_gradient, created_at, updated_at)
     VALUES(?, ?, ?, ?, ?, ?)
@@ -1206,17 +2407,41 @@ const createDatabaseTx = db.transaction((name, folderId) => {
     VALUES(?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertProperty.run(databaseId, 'id', 'ID', 'autoId', '{}', 1, 0, ts);
-  insertProperty.run(databaseId, 'titulo', 'Título', 'text', '{}', 1, 1, ts);
+  const autoIdResult = insertProperty.run(databaseId, 'id', 'ID', 'autoId', '{}', 1, 0, ts);
+  const propertyIdByKey = new Map([['id', Number(autoIdResult.lastInsertRowid)]]);
+  let position = 1;
+
+  blueprint.properties.forEach(item => {
+    const propertyResult = insertProperty.run(
+      databaseId,
+      String(item.key || normalizeKey(item.name || `campo_${position}`)),
+      String(item.name || `Campo ${position}`),
+      String(item.type || 'text'),
+      JSON.stringify(sanitizePropertyConfig(String(item.type || 'text'), item.config || {})),
+      item.isVisible === false ? 0 : 1,
+      position,
+      ts,
+    );
+    propertyIdByKey.set(String(item.key || ''), Number(propertyResult.lastInsertRowid));
+    position += 1;
+  });
 
   const insertView = db.prepare(`
     INSERT INTO database_views(database_id, name, type, position, config_json, created_at)
     VALUES(?, ?, ?, ?, ?, ?)
   `);
 
-  insertView.run(databaseId, 'Tabla', 'table', 0, '{}', ts);
-  insertView.run(databaseId, 'Galería', 'gallery', 1, '{}', ts);
-  insertView.run(databaseId, 'Análisis', 'analysis', 2, '{}', ts);
+  blueprint.views.forEach((view, index) => {
+    const config = resolveTemplateViewConfig(view.config || {}, propertyIdByKey);
+    insertView.run(
+      databaseId,
+      String(view.name || `Vista ${index + 1}`),
+      String(view.type || 'table'),
+      index,
+      JSON.stringify(config),
+      ts,
+    );
+  });
 
   return databaseId;
 });
@@ -1290,7 +2515,17 @@ app.post('/api/settings/api-keys', (req, res) => {
   const settings = getAppSettings();
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const label = body.label ? String(body.label).trim() : null;
-  const created = createApiKeyEntry(label);
+  const expiresAtInput = body.expiresAt == null ? null : body.expiresAt;
+  const expiresAt = parseOptionalIsoDate(expiresAtInput);
+  if (expiresAtInput && !expiresAt) {
+    return res.status(400).json({ error: 'Fecha de caducidad inválida' });
+  }
+  if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+    return res.status(400).json({ error: 'La caducidad debe estar en el futuro' });
+  }
+
+  const scopes = normalizeApiKeyScopes(body.scopes);
+  const created = createApiKeyEntry(label, { scopes, expiresAt });
   const nextRaw = {
     ...settings,
     api: {
@@ -1305,6 +2540,17 @@ app.post('/api/settings/api-keys', (req, res) => {
     prefix: created.entry.prefix,
     activeKeyCount: countActiveApiKeys(next.api),
   });
+  logActivity({
+    entityType: 'api_key',
+    action: 'created',
+    summary: `API key creada${created.entry.label ? ` (${created.entry.label})` : ''}`,
+    payload: {
+      keyId: created.entry.id,
+      prefix: created.entry.prefix,
+      scopes: created.entry.scopes,
+      expiresAt: created.entry.expiresAt,
+    },
+  });
 
   res.status(201).json({
     id: created.entry.id,
@@ -1312,6 +2558,8 @@ app.post('/api/settings/api-keys', (req, res) => {
     key: created.key,
     createdAt: created.entry.createdAt,
     label: created.entry.label,
+    scopes: created.entry.scopes,
+    expiresAt: created.entry.expiresAt,
   });
 });
 
@@ -1344,6 +2592,15 @@ app.delete('/api/settings/api-keys/:id', (req, res) => {
   emitWebhookEvent('settings.api_key.revoked', {
     keyId,
     activeKeyCount: countActiveApiKeys(next.api),
+  });
+  logActivity({
+    entityType: 'api_key',
+    action: 'revoked',
+    summary: `API key revocada${entries[index].label ? ` (${entries[index].label})` : ''}`,
+    payload: {
+      keyId,
+      prefix: entries[index].prefix,
+    },
   });
 
   res.json({ ok: true });
@@ -1491,13 +2748,29 @@ app.get('/api/databases', (req, res) => {
 });
 
 app.post('/api/databases', (req, res) => {
-  const { name, folderId = null } = req.body || {};
+  const { name, folderId = null, templateKey = null } = req.body || {};
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: 'El nombre de la base de datos es obligatorio' });
   }
 
-  const databaseId = createDatabaseTx(String(name).trim(), folderId ? Number(folderId) : null);
-  emitWebhookEvent('database.created', { id: databaseId, name: String(name).trim(), folderId: folderId ? Number(folderId) : null });
+  const databaseId = createDatabaseTx(String(name).trim(), folderId ? Number(folderId) : null, { templateKey });
+  emitWebhookEvent('database.created', {
+    id: databaseId,
+    name: String(name).trim(),
+    folderId: folderId ? Number(folderId) : null,
+    templateKey: templateKey ? String(templateKey) : null,
+  });
+  logActivity({
+    databaseId,
+    entityType: 'database',
+    entityId: databaseId,
+    action: 'created',
+    summary: `Base de datos creada: ${String(name).trim()}`,
+    payload: {
+      folderId: folderId ? Number(folderId) : null,
+      templateKey: templateKey ? String(templateKey) : null,
+    },
+  });
   res.status(201).json({ id: databaseId });
 });
 
@@ -1521,6 +2794,33 @@ app.get('/api/databases/:id', (req, res) => {
     properties,
     views,
     totalRecords,
+  });
+});
+
+app.get('/api/databases/:id/context', (req, res) => {
+  const data = resolveDatabaseRowIdentifier(req.params.id);
+  if (!data) return res.status(404).json({ error: 'Base de datos no encontrada' });
+  const databaseId = Number(data.id);
+
+  const properties = listProperties(databaseId);
+  const views = listViews(databaseId);
+  const favoriteViews = views.filter(view => Boolean(view.config?.favorite));
+  const attachmentCount = Number(
+    db.prepare('SELECT COUNT(*) AS c FROM attachments WHERE database_id = ?').get(databaseId)?.c || 0,
+  );
+  const recordCount = Number(
+    db.prepare('SELECT COUNT(*) AS c FROM records WHERE database_id = ?').get(databaseId)?.c || 0,
+  );
+
+  res.json({
+    attachmentCount,
+    recordCount,
+    propertyCount: properties.length,
+    viewCount: views.length,
+    favoriteViews: favoriteViews.length ? favoriteViews : views.slice(0, 3),
+    recentActivity: listActivityRows('database_id = ?', [databaseId], 8),
+    recentAttachments: listRecentAttachmentsByDatabase(databaseId, 8),
+    brokenRelations: listBrokenRelationSummaries(databaseId),
   });
 });
 
@@ -1564,6 +2864,18 @@ app.put('/api/databases/:id/settings', (req, res) => {
     folderId,
     headerGradient,
   });
+  logActivity({
+    databaseId,
+    entityType: 'database',
+    entityId: databaseId,
+    action: 'settings_updated',
+    summary: `Configuración de base actualizada: ${name}`,
+    payload: {
+      name,
+      folderId,
+      headerGradient,
+    },
+  });
   res.json({ ok: true });
 });
 
@@ -1575,6 +2887,17 @@ app.post('/api/databases/:id/header-image', upload.single('image'), (req, res) =
 
   const relativePath = path.relative(UPLOADS_DIR, req.file.path).replace(/\\/g, '/');
   db.prepare('UPDATE databases SET header_image = ?, updated_at = ? WHERE id = ?').run(relativePath, nowIso(), databaseId);
+  logActivity({
+    databaseId,
+    entityType: 'database',
+    entityId: databaseId,
+    action: 'header_image_updated',
+    summary: `Imagen de cabecera actualizada en ${dbRow.name}`,
+    payload: {
+      storagePath: relativePath,
+      fileName: req.file.originalname,
+    },
+  });
   res.json({ ok: true, headerImage: `/uploads/${relativePath}` });
 });
 
@@ -1589,6 +2912,14 @@ app.delete('/api/databases/:id/header-image', (req, res) => {
   }
 
   db.prepare('UPDATE databases SET header_image = NULL, updated_at = ? WHERE id = ?').run(nowIso(), databaseId);
+  logActivity({
+    databaseId,
+    entityType: 'database',
+    entityId: databaseId,
+    action: 'header_image_deleted',
+    summary: `Imagen de cabecera eliminada en ${dbRow.name}`,
+    payload: {},
+  });
   res.json({ ok: true });
 });
 
@@ -1597,6 +2928,16 @@ app.delete('/api/databases/:id', (req, res) => {
   if (!row) return res.status(404).json({ error: 'Base de datos no encontrada' });
   const databaseId = Number(row.id);
 
+  logActivity({
+    databaseId,
+    entityType: 'database',
+    entityId: databaseId,
+    action: 'deleted',
+    summary: `Base de datos eliminada: ${row.name}`,
+    payload: {
+      apiCode: row.api_code || null,
+    },
+  });
   db.prepare('DELETE FROM databases WHERE id = ?').run(databaseId);
   const dir = path.join(UPLOADS_DIR, `db_${databaseId}`);
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
@@ -1627,6 +2968,7 @@ app.post('/api/databases/:id/properties', (req, res) => {
   }
 
   const cfg = sanitizePropertyConfig(type, body.config || {});
+  assertPropertyConfigIsValid(databaseId, type, cfg);
   const ts = nowIso();
   const position = properties.length;
 
@@ -1687,12 +3029,23 @@ app.post('/api/databases/:id/properties', (req, res) => {
     name,
     type,
   });
+  logActivity({
+    databaseId,
+    entityType: 'property',
+    entityId: createdId,
+    action: 'created',
+    summary: `Propiedad creada: ${name}`,
+    payload: {
+      type,
+      key,
+    },
+  });
   res.status(201).json({ id: createdId });
 });
 
 app.put('/api/properties/:id', (req, res) => {
   const propertyId = Number(req.params.id);
-  const row = db.prepare('SELECT id, database_id, type FROM properties WHERE id = ?').get(propertyId);
+  const row = db.prepare('SELECT id, database_id, type, key FROM properties WHERE id = ?').get(propertyId);
   if (!row) return res.status(404).json({ error: 'Propiedad no encontrada' });
 
   const body = req.body || {};
@@ -1701,7 +3054,14 @@ app.put('/api/properties/:id', (req, res) => {
   const nextVisible = body.isVisible === undefined ? current.is_visible : (body.isVisible ? 1 : 0);
   const type = body.type ? String(body.type) : current.type;
   ensureType(type);
+  if (row.key === 'id' && type !== 'autoId') {
+    return res.status(400).json({ error: 'La propiedad ID no puede cambiar de tipo' });
+  }
+  if (!nextName) {
+    return res.status(400).json({ error: 'Nombre de propiedad obligatorio' });
+  }
   const nextConfig = sanitizePropertyConfig(type, body.config === undefined ? parseJson(current.config_json, {}) : body.config);
+  assertPropertyConfigIsValid(row.database_id, type, nextConfig, { propertyId });
 
   db.prepare(`
     UPDATE properties
@@ -1709,12 +3069,35 @@ app.put('/api/properties/:id', (req, res) => {
     WHERE id = ?
   `).run(nextName, type, JSON.stringify(nextConfig), nextVisible, propertyId);
 
+  if ((current.type === 'relation' && type !== 'relation') || (current.type === 'rollup' && type !== 'rollup')) {
+    cleanupPropertyConfigReferences(propertyId);
+  }
+  const nextProp = {
+    id: propertyId,
+    name: nextName,
+    type,
+    config: nextConfig,
+  };
+  revalidateStoredValuesForProperty(nextProp);
+  repairRelationIntegrity(row.database_id);
   db.prepare('UPDATE databases SET updated_at = ? WHERE id = ?').run(nowIso(), row.database_id);
   emitWebhookEvent('property.updated', {
     propertyId,
     databaseId: row.database_id,
     name: nextName,
     type,
+  });
+  logActivity({
+    databaseId: row.database_id,
+    entityType: 'property',
+    entityId: propertyId,
+    action: 'updated',
+    summary: `Propiedad actualizada: ${nextName}`,
+    payload: {
+      previousType: current.type,
+      nextType: type,
+      key: row.key,
+    },
   });
   res.json({ ok: true });
 });
@@ -1723,15 +3106,36 @@ app.delete('/api/properties/:id', (req, res) => {
   const propertyId = Number(req.params.id);
   const row = db.prepare('SELECT id, database_id, type, key FROM properties WHERE id = ?').get(propertyId);
   if (!row) return res.status(404).json({ error: 'Propiedad no encontrada' });
+  if (row.key === 'id' || row.type === 'autoId') {
+    return res.status(400).json({ error: 'La propiedad ID no se puede eliminar' });
+  }
 
+  const attachmentFiles = db.prepare('SELECT storage_path FROM attachments WHERE property_id = ?').all(propertyId);
+  cleanupPropertyConfigReferences(propertyId);
   db.prepare('DELETE FROM properties WHERE id = ?').run(propertyId);
   db.prepare('DELETE FROM attachments WHERE property_id = ?').run(propertyId);
+  attachmentFiles.forEach(file => {
+    const abs = path.join(UPLOADS_DIR, file.storage_path);
+    if (fs.existsSync(abs)) fs.rmSync(abs, { force: true });
+  });
+  repairRelationIntegrity(row.database_id);
   db.prepare('UPDATE databases SET updated_at = ? WHERE id = ?').run(nowIso(), row.database_id);
   emitWebhookEvent('property.deleted', {
     propertyId,
     databaseId: row.database_id,
     type: row.type,
     key: row.key,
+  });
+  logActivity({
+    databaseId: row.database_id,
+    entityType: 'property',
+    entityId: propertyId,
+    action: 'deleted',
+    summary: `Propiedad eliminada: ${row.key}`,
+    payload: {
+      type: row.type,
+      key: row.key,
+    },
   });
   res.json({ ok: true });
 });
@@ -1963,61 +3367,20 @@ app.get('/api/databases/:id/records', (req, res) => {
   const search = String(req.query.search || '').toLowerCase().trim();
   const sortPropertyId = Number(req.query.sortPropertyId || 0);
   const sortDir = String(req.query.sortDir || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
-  const filters = parseJson(String(req.query.filters || '[]'), []);
+  const filters = parseJson(String(req.query.filters || '{}'), {});
   const requestedSorts = parseJson(String(req.query.sorts || '[]'), []);
 
   const props = listProperties(databaseId);
-  const rows = loadRecordRows(databaseId);
-  applyRollups(databaseId, rows);
-
-  let render = rows.map(row => toRenderableRecord(databaseId, row, props));
+  let render = loadRenderableRecords(databaseId, props);
 
   if (search) {
-    render = render.filter(record => Object.values(record.values).some(value => {
-      if (Array.isArray(value)) return value.join(' ').toLowerCase().includes(search);
-      return String(value || '').toLowerCase().includes(search);
-    }));
+    render = render.filter(record => recordMatchesSearch(record, props, search));
   }
 
   render = render.filter(record => filterRecord(record, filters, props));
+  render = sortRenderableRecords(render, props, normalizeRequestedSorts(requestedSorts, sortPropertyId, sortDir));
 
-  const normalizedSorts = Array.isArray(requestedSorts)
-    ? requestedSorts
-      .map(item => ({
-        propertyId: Number(item?.propertyId || 0),
-        dir: String(item?.dir || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc',
-      }))
-      .filter(item => item.propertyId)
-    : [];
-
-  if (!normalizedSorts.length && sortPropertyId) {
-    normalizedSorts.push({ propertyId: sortPropertyId, dir: sortDir });
-  }
-
-  if (normalizedSorts.length) {
-    const sortMeta = normalizedSorts
-      .map(item => ({
-        dir: item.dir,
-        prop: props.find(p => p.id === item.propertyId),
-      }))
-      .filter(item => item.prop);
-
-    if (sortMeta.length) {
-      render.sort((a, b) => {
-        for (const item of sortMeta) {
-          const av = a.values[item.prop.key];
-          const bv = b.values[item.prop.key];
-          const va = Array.isArray(av) ? av.join(', ') : av;
-          const vb = Array.isArray(bv) ? bv.join(', ') : bv;
-          const cmp = compareValues(va, vb);
-          if (cmp !== 0) return item.dir === 'asc' ? cmp : -cmp;
-        }
-        return compareValues(a.id, b.id);
-      });
-    }
-  }
-
-  const totalAll = rows.length;
+  const totalAll = loadRecordRows(databaseId).length;
   const total = render.length;
   const start = (page - 1) * pageSize;
   const data = render.slice(start, start + pageSize);
@@ -2034,7 +3397,6 @@ app.post('/api/databases/:id/records', (req, res) => {
   const body = req.body || {};
   const values = body.values || {};
   const props = listProperties(databaseId);
-  const propByKey = new Map(props.map(p => [p.key, p]));
 
   const tx = db.transaction(() => {
     const ts = nowIso();
@@ -2068,8 +3430,10 @@ app.post('/api/databases/:id/records', (req, res) => {
       }
 
       if (prop.type === 'relation') {
-        value = normalizeRelationValue(prop, value);
+        value = normalizeStoredValueForProperty(prop, value);
         pendingRelationSync.push({ relationProp: prop, prevIds: [], nextIds: value });
+      } else {
+        value = normalizeStoredValueForProperty(prop, value);
       }
 
       upsertValue.run(recordId, prop.id, JSON.stringify(value));
@@ -2085,6 +3449,17 @@ app.post('/api/databases/:id/records', (req, res) => {
 
   const id = tx();
   emitWebhookEvent('record.created', { databaseId, recordId: id });
+  logActivity({
+    databaseId,
+    recordId: id,
+    entityType: 'record',
+    entityId: id,
+    action: 'created',
+    summary: `Registro creado en ${database.name}`,
+    payload: {
+      propertyCount: props.length,
+    },
+  });
   res.status(201).json({ id });
 });
 
@@ -2103,6 +3478,27 @@ app.get('/api/records/:id', (req, res) => {
   return res.json({
     ...render,
     databaseId: record.database_id,
+  });
+});
+
+app.get('/api/records/:id/activity', (req, res) => {
+  const recordId = Number(req.params.id);
+  const record = getRecordById(recordId);
+  if (!record) return res.status(404).json({ error: 'Registro no encontrado' });
+
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 30)));
+  return res.json({
+    items: listActivityRows('record_id = ?', [recordId], limit),
+  });
+});
+
+app.get('/api/databases/:id/activity', (req, res) => {
+  const database = resolveDatabaseRowIdentifier(req.params.id);
+  if (!database) return res.status(404).json({ error: 'Base de datos no encontrada' });
+
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 80)));
+  return res.json({
+    items: listActivityRows('database_id = ?', [Number(database.id)], limit),
   });
 });
 
@@ -2140,8 +3536,10 @@ app.post('/api/records/:id/content', (req, res) => {
     const prevRow = db.prepare('SELECT value_json FROM record_values WHERE record_id = ? AND property_id = ?').get(recordId, prop.id);
     const prevParsed = parseJson(prevRow?.value_json || '[]', []);
     const prevIds = Array.isArray(prevParsed) ? prevParsed.map(v => Number(v)).filter(Boolean) : [];
-    nextValue = normalizeRelationValue(prop, nextValue);
+    nextValue = normalizeStoredValueForProperty(prop, nextValue);
     syncReciprocalRelationLinks({ relationProp: prop, recordId, prevIds, nextIds: nextValue });
+  } else {
+    nextValue = normalizeStoredValueForProperty(prop, nextValue);
   }
 
   upsertValue.run(recordId, prop.id, JSON.stringify(nextValue));
@@ -2153,6 +3551,18 @@ app.post('/api/records/:id/content', (req, res) => {
     recordId,
     propertyId: prop.id,
     propertyKey: prop.key,
+  });
+  logActivity({
+    databaseId: record.database_id,
+    recordId,
+    entityType: 'record',
+    entityId: recordId,
+    action: 'content_updated',
+    summary: `Campo actualizado: ${prop.name}`,
+    payload: {
+      propertyId: prop.id,
+      propertyKey: prop.key,
+    },
   });
 
   return res.json({ ok: true });
@@ -2184,8 +3594,10 @@ app.put('/api/records/:id', (req, res) => {
       const prevRow = db.prepare('SELECT value_json FROM record_values WHERE record_id = ? AND property_id = ?').get(recordId, prop.id);
       const prevParsed = parseJson(prevRow?.value_json || '[]', []);
       const prevIds = Array.isArray(prevParsed) ? prevParsed.map(v => Number(v)).filter(Boolean) : [];
-      nextValue = normalizeRelationValue(prop, nextValue);
+      nextValue = normalizeStoredValueForProperty(prop, nextValue);
       pendingRelationSync.push({ relationProp: prop, prevIds, nextIds: nextValue });
+    } else {
+      nextValue = normalizeStoredValueForProperty(prop, nextValue);
     }
 
     upsertValue.run(recordId, prop.id, JSON.stringify(nextValue));
@@ -2199,6 +3611,17 @@ app.put('/api/records/:id', (req, res) => {
   db.prepare('UPDATE records SET updated_at = ? WHERE id = ?').run(ts, recordId);
   db.prepare('UPDATE databases SET updated_at = ? WHERE id = ?').run(ts, record.database_id);
   emitWebhookEvent('record.updated', { databaseId: record.database_id, recordId });
+  logActivity({
+    databaseId: record.database_id,
+    recordId,
+    entityType: 'record',
+    entityId: recordId,
+    action: 'updated',
+    summary: `Registro actualizado #${recordId}`,
+    payload: {
+      changedKeys: Object.keys(values || {}),
+    },
+  });
   res.json({ ok: true });
 });
 
@@ -2208,6 +3631,17 @@ app.delete('/api/records/:id', (req, res) => {
   if (!record) return res.status(404).json({ error: 'Registro no encontrado' });
 
   const files = db.prepare('SELECT storage_path FROM attachments WHERE record_id = ?').all(recordId);
+  logActivity({
+    databaseId: record.database_id,
+    recordId,
+    entityType: 'record',
+    entityId: recordId,
+    action: 'deleted',
+    summary: `Registro eliminado #${recordId}`,
+    payload: {
+      attachmentCount: files.length,
+    },
+  });
 
   const relationProps = listProperties(record.database_id).filter(prop => prop.type === 'relation');
   relationProps.forEach(prop => {
@@ -2218,6 +3652,7 @@ app.delete('/api/records/:id', (req, res) => {
   });
 
   db.prepare('DELETE FROM records WHERE id = ?').run(recordId);
+  removeDeletedRecordReferences(recordId, record.database_id);
 
   files.forEach(file => {
     const abs = path.join(UPLOADS_DIR, file.storage_path);
@@ -2248,7 +3683,10 @@ app.get('/api/records/:recordId/attachments', (req, res) => {
   })));
 });
 
-app.post('/api/records/:recordId/attachments/:propertyId', upload.single('file'), (req, res) => {
+app.post('/api/records/:recordId/attachments/:propertyId', upload.fields([
+  { name: 'file', maxCount: 20 },
+  { name: 'files', maxCount: 20 },
+]), (req, res) => {
   const recordId = Number(req.params.recordId);
   const propertyId = Number(req.params.propertyId);
   const record = getRecordById(recordId);
@@ -2259,41 +3697,72 @@ app.post('/api/records/:recordId/attachments/:propertyId', upload.single('file')
     return res.status(400).json({ error: 'Propiedad de adjunto inválida' });
   }
 
-  if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+  const files = [
+    ...(Array.isArray(req.files?.files) ? req.files.files : []),
+    ...(Array.isArray(req.files?.file) ? req.files.file : []),
+  ];
+  if (!files.length) return res.status(400).json({ error: 'No se recibió archivo' });
 
-  const relativePath = path.relative(UPLOADS_DIR, req.file.path).replace(/\\/g, '/');
   const ts = nowIso();
-  const result = db.prepare(`
+  const insertAttachment = db.prepare(`
     INSERT INTO attachments(database_id, record_id, property_id, file_name, storage_path, mime_type, size_bytes, created_at)
     VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    record.database_id,
-    recordId,
-    propertyId,
-    req.file.originalname,
-    relativePath,
-    req.file.mimetype || 'application/octet-stream',
-    req.file.size || 0,
-    ts,
-  );
+  `);
+
+  const created = files.map(file => {
+    const relativePath = path.relative(UPLOADS_DIR, file.path).replace(/\\/g, '/');
+    const result = insertAttachment.run(
+      record.database_id,
+      recordId,
+      propertyId,
+      file.originalname,
+      relativePath,
+      file.mimetype || 'application/octet-stream',
+      file.size || 0,
+      ts,
+    );
+    const attachmentId = Number(result.lastInsertRowid);
+    emitWebhookEvent('attachment.created', {
+      databaseId: record.database_id,
+      recordId,
+      propertyId,
+      attachmentId,
+      fileName: file.originalname,
+    });
+    return {
+      id: attachmentId,
+      file_name: file.originalname,
+      mime_type: file.mimetype || 'application/octet-stream',
+      size_bytes: file.size || 0,
+      created_at: ts,
+      url: `/uploads/${relativePath}`,
+      downloadUrl: `/api/attachments/${attachmentId}/download`,
+    };
+  });
 
   db.prepare('UPDATE records SET updated_at = ? WHERE id = ?').run(ts, recordId);
   db.prepare('UPDATE databases SET updated_at = ? WHERE id = ?').run(ts, record.database_id);
-
-  const createdAttachmentId = Number(result.lastInsertRowid);
-  emitWebhookEvent('attachment.created', {
+  logActivity({
     databaseId: record.database_id,
     recordId,
-    propertyId,
-    attachmentId: createdAttachmentId,
-    fileName: req.file.originalname,
+    entityType: 'attachment',
+    entityId: created[0]?.id || null,
+    action: 'uploaded',
+    summary: `${created.length} adjunto(s) subidos`,
+    payload: {
+      propertyId,
+      count: created.length,
+      fileNames: created.map(item => item.file_name),
+    },
   });
 
   res.status(201).json({
-    id: createdAttachmentId,
-    file_name: req.file.originalname,
-    url: `/uploads/${relativePath}`,
-    downloadUrl: `/api/attachments/${createdAttachmentId}/download`,
+    items: created,
+    count: created.length,
+    id: created[0]?.id || null,
+    file_name: created[0]?.file_name || null,
+    url: created[0]?.url || null,
+    downloadUrl: created[0]?.downloadUrl || null,
   });
 });
 
@@ -2331,6 +3800,15 @@ app.delete('/api/attachments/:id', (req, res) => {
     recordId: file.record_id,
     attachmentId,
   });
+  logActivity({
+    databaseId: file.database_id,
+    recordId: file.record_id,
+    entityType: 'attachment',
+    entityId: attachmentId,
+    action: 'deleted',
+    summary: `Adjunto eliminado #${attachmentId}`,
+    payload: {},
+  });
   res.json({ ok: true });
 });
 
@@ -2353,6 +3831,17 @@ app.delete('/api/attachments-by-url', (req, res) => {
     recordId: file.record_id,
     attachmentId: file.id,
   });
+  logActivity({
+    databaseId: file.database_id,
+    recordId: file.record_id,
+    entityType: 'attachment',
+    entityId: file.id,
+    action: 'deleted',
+    summary: `Adjunto eliminado #${file.id}`,
+    payload: {
+      storagePath: file.storage_path,
+    },
+  });
   res.json({ ok: true });
 });
 
@@ -2363,12 +3852,29 @@ app.post('/api/databases/:id/analysis', (req, res) => {
   if (!getDatabase(databaseId)) return res.status(404).json({ error: 'Base de datos no encontrada' });
 
   const body = req.body || {};
-  const chart = computeChart(databaseId, body);
-  const chi = body.chiAPropertyId && body.chiBPropertyId
-    ? computeChiSquare(databaseId, body.chiAPropertyId, body.chiBPropertyId)
-    : null;
+  const props = listProperties(databaseId);
+  let records = loadRenderableRecords(databaseId, props);
+  const filters = normalizeFilterCriteria(body.filters || {}, props);
+  const search = String(body.search || '').trim().toLowerCase();
+  const requestedSorts = normalizeRequestedSorts(body.sorts || []);
 
-  res.json({ chart, chi });
+  if (filters.groups.length) {
+    records = records.filter(record => filterRecord(record, filters, props));
+  }
+  if (search) {
+    records = records.filter(record => recordMatchesSearch(record, props, search));
+  }
+  if (requestedSorts.length) {
+    records = sortRenderableRecords(records, props, requestedSorts);
+  }
+
+  const chart = computeChart(databaseId, body, records, props);
+  const chi = body.chiAPropertyId && body.chiBPropertyId
+    ? computeChiSquare(databaseId, body.chiAPropertyId, body.chiBPropertyId, records, props)
+    : null;
+  const insights = buildAnalysisInsights(records, props, body);
+
+  res.json({ chart, chi, insights });
 });
 
 app.get('/api/tag-colors', (_req, res) => {
@@ -2388,6 +3894,7 @@ app.get('/api/databases/:id/backup', (req, res) => {
 
 app.get('/api/backup/full', (_req, res) => {
   const filename = `dubydb_full_backup_${Date.now()}.zip`;
+  const snapshotPath = path.join(DATA_DIR, `tmp_full_backup_${Date.now()}.db`);
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
@@ -2395,20 +3902,37 @@ app.get('/api/backup/full', (_req, res) => {
   archive.pipe(res);
 
   if (fs.existsSync(DB_PATH)) {
-    archive.file(DB_PATH, { name: 'database/duby.db' });
+    const escapedSnapshotPath = snapshotPath.replace(/'/g, "''");
+    db.pragma('wal_checkpoint(FULL)');
+    if (fs.existsSync(snapshotPath)) fs.rmSync(snapshotPath, { force: true });
+    db.exec(`VACUUM INTO '${escapedSnapshotPath}'`);
+    archive.file(snapshotPath, { name: 'database/duby.db' });
   }
   if (fs.existsSync(UPLOADS_DIR)) {
     archive.directory(UPLOADS_DIR, 'uploads');
   }
 
   archive.append(JSON.stringify({
-    version: 1,
+    version: BACKUP_VERSION,
     exportedAt: nowIso(),
     databasePath: DB_PATH,
     uploadsPath: UPLOADS_DIR,
   }, null, 2), { name: 'manifest.json' });
 
   archive.finalize();
+  const cleanupSnapshot = () => {
+    if (fs.existsSync(snapshotPath)) fs.rmSync(snapshotPath, { force: true });
+  };
+  res.on('close', cleanupSnapshot);
+  res.on('finish', cleanupSnapshot);
+  logActivity({
+    entityType: 'backup',
+    action: 'full_exported',
+    summary: `Backup completo exportado: ${filename}`,
+    payload: {
+      fileName: filename,
+    },
+  });
   emitWebhookEvent('backup.full.exported', { fileName: filename });
 });
 
@@ -2450,6 +3974,8 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
         DELETE FROM properties;
         DELETE FROM databases;
         DELETE FROM folders;
+        DELETE FROM activity_log;
+        DELETE FROM api_key_usage_logs;
         DELETE FROM webhook_deliveries;
         DELETE FROM app_settings;
       `);
@@ -2459,6 +3985,11 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
 
       const sourceDatabasesCols = new Set(db.prepare('PRAGMA restore_src.table_info(databases)').all().map(column => column.name));
       const sourceViewsCols = new Set(db.prepare('PRAGMA restore_src.table_info(database_views)').all().map(column => column.name));
+      const hasSourceActivityLog = tableExists('activity_log', 'restore_src');
+      const hasSourceApiKeyUsageLogs = tableExists('api_key_usage_logs', 'restore_src');
+      const hasSourceAppSettings = tableExists('app_settings', 'restore_src');
+      const hasSourceWebhookDeliveries = tableExists('webhook_deliveries', 'restore_src');
+      const hasSourceSqliteSequence = tableExists('sqlite_sequence', 'restore_src');
 
       const insertDatabasesSql = sourceDatabasesCols.has('api_code')
         ? `
@@ -2483,6 +4014,24 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
         SELECT id, database_id, name, type, 0, config_json, created_at
         FROM restore_src.database_views;
       `;
+      const insertActivitySql = hasSourceActivityLog
+        ? 'INSERT INTO activity_log SELECT * FROM restore_src.activity_log;'
+        : '';
+      const insertApiKeyUsageSql = hasSourceApiKeyUsageLogs
+        ? 'INSERT INTO api_key_usage_logs SELECT * FROM restore_src.api_key_usage_logs;'
+        : '';
+      const insertAppSettingsSql = hasSourceAppSettings
+        ? 'INSERT INTO app_settings SELECT * FROM restore_src.app_settings;'
+        : '';
+      const insertWebhookDeliveriesSql = hasSourceWebhookDeliveries
+        ? 'INSERT INTO webhook_deliveries SELECT * FROM restore_src.webhook_deliveries;'
+        : '';
+      const insertSqliteSequenceSql = hasSourceSqliteSequence
+        ? `
+        DELETE FROM sqlite_sequence;
+        INSERT INTO sqlite_sequence SELECT * FROM restore_src.sqlite_sequence;
+      `
+        : 'DELETE FROM sqlite_sequence;';
 
       db.exec(`
         INSERT INTO folders SELECT * FROM restore_src.folders;
@@ -2492,23 +4041,38 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
         INSERT INTO record_values SELECT * FROM restore_src.record_values;
         ${insertViewsSql}
         INSERT INTO attachments SELECT * FROM restore_src.attachments;
-        INSERT INTO app_settings SELECT * FROM restore_src.app_settings;
-        INSERT INTO webhook_deliveries SELECT * FROM restore_src.webhook_deliveries;
-        DELETE FROM sqlite_sequence;
-        INSERT INTO sqlite_sequence SELECT * FROM restore_src.sqlite_sequence;
+        ${insertActivitySql}
+        ${insertApiKeyUsageSql}
+        ${insertAppSettingsSql}
+        ${insertWebhookDeliveriesSql}
+        ${insertSqliteSequenceSql}
       `);
-      db.exec('DETACH DATABASE restore_src');
-      db.exec('PRAGMA foreign_keys = ON');
     });
 
     replaceAllDataTx();
+    if (databaseIsAttached('restore_src')) {
+      db.exec('DETACH DATABASE restore_src');
+    }
+    db.exec('PRAGMA foreign_keys = ON');
+    ensureViewsPositionColumn();
     ensureDatabaseApiCodeColumn();
+    repairRelationIntegrity();
+    migrateLegacyApiKeysIfNeeded();
 
     fs.rmSync(UPLOADS_DIR, { recursive: true, force: true });
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
     if (fs.existsSync(sourceUploadsDir)) {
       copyDirRecursive(sourceUploadsDir, UPLOADS_DIR);
     }
+
+    logActivity({
+      entityType: 'backup',
+      action: 'full_restored',
+      summary: `Backup completo restaurado desde ${req.file.originalname}`,
+      payload: {
+        sourceFile: req.file.originalname,
+      },
+    });
 
     emitWebhookEvent('backup.full.restored', {
       restoredAt: nowIso(),
@@ -2517,6 +4081,14 @@ app.post('/api/backup/full/restore', fullRestoreUpload.single('backup'), async (
 
     res.json({ ok: true, message: 'Portfolio restaurado correctamente' });
   } catch (err) {
+    try {
+      if (databaseIsAttached('restore_src')) {
+        db.exec('DETACH DATABASE restore_src');
+      }
+      db.exec('PRAGMA foreign_keys = ON');
+    } catch (_cleanupError) {
+      // best-effort cleanup
+    }
     console.error('[FULL RESTORE ERROR]', err);
     res.status(500).json({ error: 'Error al restaurar backup completo: ' + err.message });
   } finally {
@@ -2542,20 +4114,15 @@ app.get('/api/databases/:id/export', (req, res) => {
 
   /* If mode=view, apply current filters/sorts from query params */
   if (mode === 'view') {
-    const filters = parseJson(req.query.filters || '[]', []);
+    const filters = parseJson(req.query.filters || '{}', {});
     const search = String(req.query.search || '').trim().toLowerCase();
 
-    if (filters.length) {
+    const normalizedFilters = normalizeFilterCriteria(filters, props);
+    if (normalizedFilters.groups.length) {
       records = records.filter(rec => filterRecord(rec, filters, props));
     }
     if (search) {
-      records = records.filter(rec => {
-        return props.some(prop => {
-          const val = rec.values[prop.key];
-          const str = Array.isArray(val) ? val.join(' ') : String(val || '');
-          return str.toLowerCase().includes(search);
-        });
-      });
+      records = records.filter(rec => recordMatchesSearch(rec, props, search));
     }
   }
 
@@ -2564,7 +4131,7 @@ app.get('/api/databases/:id/export', (req, res) => {
   const attachmentRows = listAttachmentsByRecord(recordIds);
 
   const payload = {
-    version: 1,
+    version: BACKUP_VERSION,
     exportedAt: nowIso(),
     database: dbRow,
     properties: props.map(p => ({
@@ -2612,6 +4179,18 @@ app.get('/api/databases/:id/export', (req, res) => {
       mode,
       recordCount: records.length,
     });
+    logActivity({
+      databaseId,
+      entityType: 'database',
+      entityId: databaseId,
+      action: 'exported',
+      summary: `Backup exportado de ${dbRow.name}`,
+      payload: {
+        includeFiles,
+        mode,
+        recordCount: records.length,
+      },
+    });
     return res.json(payload);
   }
 
@@ -2637,6 +4216,18 @@ app.get('/api/databases/:id/export', (req, res) => {
     includeFiles,
     mode,
     recordCount: records.length,
+  });
+  logActivity({
+    databaseId,
+    entityType: 'database',
+    entityId: databaseId,
+    action: 'exported',
+    summary: `Backup exportado de ${dbRow.name}`,
+    payload: {
+      includeFiles,
+      mode,
+      recordCount: records.length,
+    },
   });
 });
 
@@ -2736,16 +4327,51 @@ app.post('/api/restore', restoreUpload.single('backup'), async (req, res) => {
         id: newPropId,
         key: uniqueKey,
         type: propType,
+        name: propName,
+        config: propConfig,
       });
+    });
+
+    (payload.properties || []).forEach(prop => {
+      const oldPropId = Number(prop.id || 0);
+      const restoredProp = restoredPropByOldId.get(oldPropId);
+      if (!restoredProp) return;
+
+      const remappedConfig = remapPropertyConfigReferences(restoredProp.type, parseBackupPropertyConfig(prop), propIdMap);
+      try {
+        assertPropertyConfigIsValid(newDbId, restoredProp.type, remappedConfig, { propertyId: restoredProp.id });
+      } catch (_error) {
+        if (restoredProp.type === 'relation') {
+          remappedConfig.reciprocalPropertyId = null;
+        }
+        if (restoredProp.type === 'rollup') {
+          remappedConfig.relationPropertyId = null;
+          remappedConfig.relatedPropertyId = null;
+        }
+      }
+
+      db.prepare('UPDATE properties SET config_json = ? WHERE id = ?').run(JSON.stringify(remappedConfig), restoredProp.id);
+      restoredProp.config = remappedConfig;
     });
 
     /* Restore views */
     const sortedViews = [...(payload.views || [])].sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0));
     sortedViews.forEach((view, index) => {
+      const rawViewConfig = typeof view.config_json === 'string'
+        ? parseJson(view.config_json, {})
+        : (view.config_json && typeof view.config_json === 'object' ? view.config_json : {});
+      const remappedViewConfig = remapConfigPropertyIds(rawViewConfig, propIdMap);
       db.prepare(`
         INSERT INTO database_views(database_id, name, type, position, config_json, created_at)
         VALUES(?, ?, ?, ?, ?, ?)
-      `).run(newDbId, view.name, view.type, Number(view.position ?? index), view.config_json || '{}', ts);
+      `).run(
+        newDbId,
+        view.name,
+        view.type,
+        Number(view.position ?? index),
+        JSON.stringify(remappedViewConfig),
+        ts,
+      );
     });
 
     /* Restore records */
@@ -2783,15 +4409,23 @@ app.post('/api/restore', restoreUpload.single('backup'), async (req, res) => {
           return;
         }
 
-        upsertValue.run(newRecordId, restoredProp.id, JSON.stringify(normalizedValue));
+        upsertValue.run(
+          newRecordId,
+          restoredProp.id,
+          JSON.stringify(normalizeStoredValueForProperty(restoredProp, normalizedValue)),
+        );
       });
     });
 
     pendingRelationLinks.forEach(link => {
+      const restoredProp = [...restoredPropByOldId.values()].find(item => item.id === link.newPropId);
       const mappedIds = [...new Set((link.oldRelatedRecordIds || [])
         .map(oldId => recordIdMap.get(oldId))
         .filter(Boolean))];
-      upsertValue.run(link.newRecordId, link.newPropId, JSON.stringify(mappedIds));
+      const normalizedRelationIds = restoredProp
+        ? normalizeStoredValueForProperty(restoredProp, mappedIds)
+        : mappedIds;
+      upsertValue.run(link.newRecordId, link.newPropId, JSON.stringify(normalizedRelationIds));
     });
 
     /* Restore attachment records */
@@ -2810,15 +4444,27 @@ app.post('/api/restore', restoreUpload.single('backup'), async (req, res) => {
       const destDir = path.join(UPLOADS_DIR, newStorageDir);
       const destAbs = path.join(UPLOADS_DIR, newStoragePath);
 
-      if (srcAbs && fs.existsSync(srcAbs)) {
-        fs.mkdirSync(destDir, { recursive: true });
-        fs.copyFileSync(srcAbs, destAbs);
-      }
+      if (!srcAbs || !fs.existsSync(srcAbs)) return;
+      fs.mkdirSync(destDir, { recursive: true });
+      fs.copyFileSync(srcAbs, destAbs);
 
       db.prepare(`
         INSERT INTO attachments(database_id, record_id, property_id, file_name, storage_path, mime_type, size_bytes, created_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
       `).run(newDbId, newRecordId, newPropId, att.file_name, newStoragePath, att.mime_type || 'application/octet-stream', att.size_bytes || 0, ts);
+    });
+
+    repairRelationIntegrity(newDbId);
+    logActivity({
+      databaseId: newDbId,
+      entityType: 'database',
+      entityId: newDbId,
+      action: 'restored',
+      summary: `Base restaurada desde backup: ${String(srcDb.name || '')}`,
+      payload: {
+        recordsCount: Array.isArray(payload.records) ? payload.records.length : 0,
+        propertiesCount: Array.isArray(payload.properties) ? payload.properties.length : 0,
+      },
     });
 
     emitWebhookEvent('database.restored', {
@@ -2875,6 +4521,8 @@ function clearPortfolioData() {
         DELETE FROM properties;
         DELETE FROM databases;
         DELETE FROM folders;
+        DELETE FROM activity_log;
+        DELETE FROM api_key_usage_logs;
         DELETE FROM webhook_deliveries;
         DELETE FROM app_settings;
         DELETE FROM sqlite_sequence;
@@ -2898,6 +4546,11 @@ function clearPortfolioData() {
       .filter(entry => entry.isDirectory() && /^tmp_full_restore_\d+$/.test(entry.name));
     tempDirs.forEach(entry => {
       fs.rmSync(path.join(DATA_DIR, entry.name), { recursive: true, force: true });
+    });
+    const tempFiles = fs.readdirSync(DATA_DIR, { withFileTypes: true })
+      .filter(entry => entry.isFile() && /^tmp_full_backup_\d+\.db$/.test(entry.name));
+    tempFiles.forEach(entry => {
+      fs.rmSync(path.join(DATA_DIR, entry.name), { force: true });
     });
   }
 
@@ -3016,7 +4669,7 @@ app.use((error, _req, res, _next) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`[BOOT] dubyDB dinámico escuchando en http://${HOST}:${PORT}`);
+  console.log(`[BOOT] dubyDB server listening on http://${HOST}:${PORT}`);
   console.log(`[BOOT] SQLite: ${DB_PATH}`);
   console.log(`[BOOT] Uploads: ${UPLOADS_DIR}`);
 });

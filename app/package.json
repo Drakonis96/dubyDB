@@ -1,7 +1,7 @@
 {
-  "name": "bd-fotografias-viaje",
-  "version": "1.0.0",
-  "description": "Visualizador estilo Notion + Análisis estadístico — BD Fotografías de viaje (Tesis Doctoral)",
+  "name": "dubydb",
+  "version": "1.1.0",
+  "description": "Self-hosted workspace for custom databases, files, analytics, backups, and API integrations",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
