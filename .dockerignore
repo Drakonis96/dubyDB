@@ -7,8 +7,20 @@ node_modules
 app/node_modules
 
 # Runtime data
-data
-app/data
+data/**
+app/data/**
+
+# Keep placeholder folders when needed
+!data/uploads/
+!data/tmp_restore/
+!app/data/uploads/
+!app/data/tmp_restore/
+!data/.gitkeep
+!data/uploads/.gitkeep
+!data/tmp_restore/.gitkeep
+!app/data/.gitkeep
+!app/data/uploads/.gitkeep
+!app/data/tmp_restore/.gitkeep
 
 # Environment / secrets
 .env

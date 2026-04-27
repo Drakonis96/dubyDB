@@ -40,7 +40,7 @@ function createApi(baseUrl) {
   };
 }
 
-async function startTestServer(prefix = 'dubydb-test-', portBase = 7400) {
+async function startTestServer(prefix = 'dubydb-test-', portBase = 7400, options = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const dataDir = path.join(tempRoot, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
@@ -57,6 +57,7 @@ async function startTestServer(prefix = 'dubydb-test-', portBase = 7400) {
       DATA_DIR: dataDir,
       DB_PATH: path.join(dataDir, 'test.db'),
       UPLOADS_DIR: path.join(dataDir, 'uploads'),
+      ...(options.env || {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -66,7 +67,17 @@ async function startTestServer(prefix = 'dubydb-test-', portBase = 7400) {
   serverProcess.stdout.on('data', chunk => { stdout += String(chunk); });
   serverProcess.stderr.on('data', chunk => { stderr += String(chunk); });
 
-  await waitForHealth(baseUrl);
+  try {
+    await waitForHealth(baseUrl);
+  } catch (error) {
+    if (!serverProcess.killed) {
+      serverProcess.kill('SIGTERM');
+      await sleep(120);
+      if (!serverProcess.killed) serverProcess.kill('SIGKILL');
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    throw new Error(`${error.message}\nSTDERR:\n${stderr}\nSTDOUT:\n${stdout}`.trim());
+  }
 
   return {
     tempRoot,

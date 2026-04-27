@@ -27,6 +27,32 @@ const HEADER_GRADIENTS = [
 
 const TAG_COLORS = ['yellow', 'orange', 'pink', 'red', 'violet', 'green', 'blue', 'gray', 'black', 'purple'];
 const PROPERTY_TYPES = new Set(['text', 'singleSelect', 'multiSelect', 'autoId', 'url', 'checkbox', 'date', 'time', 'attachment', 'relation', 'rollup']);
+const AI_COMPATIBLE_PROPERTY_TYPES = new Set(['text', 'singleSelect', 'multiSelect', 'url', 'checkbox', 'date', 'time']);
+const AI_SELECT_MODES = new Set(['existingOnly', 'allowNew']);
+const AI_MAX_TEXT_ATTACHMENT_CHARS = 12000;
+const AI_MAX_BINARY_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+const AI_MAX_ATTACHMENT_ITEMS = 12;
+
+function normalizeBaseUrl(value, fallback) {
+  const raw = String(value || '').trim();
+  return (raw || fallback).replace(/\/+$/, '');
+}
+
+function getAiProviderBaseUrl(provider) {
+  switch (provider) {
+    case 'openrouter':
+      return normalizeBaseUrl(process.env.OPENROUTER_API_BASE_URL, 'https://openrouter.ai/api/v1');
+    case 'openai':
+      return normalizeBaseUrl(process.env.OPENAI_API_BASE_URL, 'https://api.openai.com/v1');
+    case 'anthropic':
+      return normalizeBaseUrl(process.env.ANTHROPIC_API_BASE_URL, 'https://api.anthropic.com/v1');
+    case 'gemini':
+      return normalizeBaseUrl(process.env.GEMINI_API_BASE_URL, 'https://generativelanguage.googleapis.com/v1beta');
+    default:
+      return '';
+  }
+}
+
 const DATABASE_TEMPLATES = {
   photoArchive: {
     properties: [
@@ -151,8 +177,13 @@ const DEFAULT_APP_SETTINGS = {
     retryCount: 1,
     endpoints: [],
   },
+  ai: {
+    activeProvider: null,
+    providers: {},
+  },
 };
 const BACKUP_VERSION = 2;
+const AI_PROVIDERS = ['openrouter', 'openai', 'gemini', 'anthropic'];
 const API_KEY_SCOPES = ['*', 'read', 'write', 'analytics', 'settings', 'backup'];
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -702,6 +733,46 @@ function hashApiKey(value, salt) {
     .digest('hex');
 }
 
+function getEncryptionKey() {
+  if (process.env.ENCRYPTION_SECRET) {
+    return crypto.createHash('sha256').update(String(process.env.ENCRYPTION_SECRET)).digest();
+  }
+  const row = db.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('ai_encryption_secret');
+  if (row && row.value_json) {
+    return Buffer.from(row.value_json, 'hex');
+  }
+  const newKey = crypto.randomBytes(32);
+  db.prepare('INSERT OR REPLACE INTO app_settings(key, value_json, updated_at) VALUES(?, ?, ?)').run('ai_encryption_secret', newKey.toString('hex'), nowIso());
+  return newKey;
+}
+
+function encryptApiKey(plaintext) {
+  if (!plaintext) return null;
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+function decryptApiKey(ciphertext) {
+  if (!ciphertext) return null;
+  try {
+    const key = getEncryptionKey();
+    const parts = ciphertext.split(':');
+    if (parts.length !== 3) return null;
+    const iv = Buffer.from(parts[0], 'hex');
+    const authTag = Buffer.from(parts[1], 'hex');
+    const encrypted = Buffer.from(parts[2], 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch (_error) {
+    return null;
+  }
+}
+
 function createApiKeyEntry(label = null, options = {}) {
   const id = `key_${crypto.randomBytes(8).toString('hex')}`;
   const secretPart = crypto.randomBytes(24).toString('base64url');
@@ -756,6 +827,23 @@ function toPublicAppSettings(settings) {
       keyCount: keyItems.filter(item => item.active).length,
       keys: keyItems,
     },
+    ai: toPublicAiSettings(safe),
+  };
+}
+
+function toPublicAiSettings(safe) {
+  const providers = safe.ai?.providers || {};
+  return {
+    activeProvider: safe.ai?.activeProvider || null,
+    providers: Object.fromEntries(
+      Object.entries(providers).map(([provider, config]) => [
+        provider,
+        {
+          isConfigured: Boolean(config?.apiKeyEncrypted),
+          model: config?.model || null,
+        },
+      ]),
+    ),
   };
 }
 
@@ -773,6 +861,19 @@ function findMatchingApiKeyEntry(settings, incomingKey) {
     }
   }
   return null;
+}
+
+function sanitizeAiProviders(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const sanitized = {};
+  for (const [provider, config] of Object.entries(raw)) {
+    if (!AI_PROVIDERS.includes(provider)) continue;
+    sanitized[provider] = {
+      apiKeyEncrypted: typeof config?.apiKeyEncrypted === 'string' && config.apiKeyEncrypted ? String(config.apiKeyEncrypted) : null,
+      model: typeof config?.model === 'string' ? String(config.model).trim().slice(0, 200) : null,
+    };
+  }
+  return sanitized;
 }
 
 function sanitizeAppSettings(raw) {
@@ -805,6 +906,10 @@ function sanitizeAppSettings(raw) {
       timeoutMs: Math.min(30000, Math.max(500, Number(merged.webhooks?.timeoutMs || 5000))),
       retryCount: Math.min(3, Math.max(0, Number(merged.webhooks?.retryCount || 1))),
       endpoints,
+    },
+    ai: {
+      activeProvider: AI_PROVIDERS.includes(merged.ai?.activeProvider) ? merged.ai.activeProvider : null,
+      providers: sanitizeAiProviders(merged.ai?.providers || {}),
     },
   };
 }
@@ -1950,6 +2055,540 @@ function createHttpError(message, status = 400) {
   return error;
 }
 
+function supportsAiForPropertyType(type) {
+  return AI_COMPATIBLE_PROPERTY_TYPES.has(String(type || '').trim());
+}
+
+function sanitizeAiPropertyConfig(baseType, rawConfig) {
+  const input = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+  const responseType = supportsAiForPropertyType(baseType) ? String(baseType) : 'text';
+  const originalType = supportsAiForPropertyType(input.originalType)
+    ? String(input.originalType)
+    : responseType;
+  const selectMode = AI_SELECT_MODES.has(String(input.selectMode || '').trim())
+    ? String(input.selectMode).trim()
+    : 'existingOnly';
+
+  return {
+    enabled: Boolean(input.enabled),
+    originalType,
+    responseType,
+    contextPropertyIds: Array.isArray(input.contextPropertyIds)
+      ? [...new Set(input.contextPropertyIds.map(value => Number(value)).filter(Boolean))]
+      : [],
+    contextAttachmentPropertyIds: Array.isArray(input.contextAttachmentPropertyIds)
+      ? [...new Set(input.contextAttachmentPropertyIds.map(value => Number(value)).filter(Boolean))]
+      : [],
+    systemPrompt: String(input.systemPrompt || '').trim().slice(0, 12000),
+    provider: AI_PROVIDERS.includes(String(input.provider || '').trim().toLowerCase())
+      ? String(input.provider).trim().toLowerCase()
+      : null,
+    model: String(input.model || '').trim().slice(0, 200) || null,
+    selectMode,
+  };
+}
+
+function isAiProperty(prop) {
+  return Boolean(prop?.config?.ai?.enabled);
+}
+
+function isImageMimeType(mimeType, fileName = '') {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(String(fileName || ''));
+}
+
+function isPdfMimeType(mimeType, fileName = '') {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime === 'application/pdf') return true;
+  return /\.pdf$/i.test(String(fileName || ''));
+}
+
+function isTextLikeMimeType(mimeType, fileName = '') {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.startsWith('text/')) return true;
+  if (['application/json', 'application/ld+json', 'application/xml', 'application/javascript', 'application/x-yaml'].includes(mime)) {
+    return true;
+  }
+  return /\.(txt|md|markdown|csv|json|xml|html?|ya?ml)$/i.test(String(fileName || ''));
+}
+
+function nextTagColor(indexSeed = 0) {
+  return TAG_COLORS[indexSeed % TAG_COLORS.length] || 'gray';
+}
+
+function canonicalizeSelectOptionLabel(options, candidate) {
+  const needle = String(candidate || '').trim().toLowerCase();
+  if (!needle) return null;
+  const found = (Array.isArray(options) ? options : []).find(option => String(option?.label || '').trim().toLowerCase() === needle);
+  return found ? String(found.label) : null;
+}
+
+function readAttachmentBinary(row) {
+  const absPath = path.join(UPLOADS_DIR, row.storage_path);
+  if (!fs.existsSync(absPath)) {
+    throw createHttpError(`No se encontró el adjunto ${row.file_name || row.storage_path}.`, 404);
+  }
+  return fs.readFileSync(absPath);
+}
+
+function readAttachmentTextSnippet(row) {
+  const buffer = readAttachmentBinary(row);
+  return buffer.toString('utf8').replace(/\u0000/g, '').trim().slice(0, AI_MAX_TEXT_ATTACHMENT_CHARS) || null;
+}
+
+function buildAiContextJson(renderRecord, props, aiConfig) {
+  const propById = new Map((props || []).map(prop => [Number(prop.id), prop]));
+  const payload = {};
+  aiConfig.contextPropertyIds.forEach(propertyId => {
+    const prop = propById.get(Number(propertyId));
+    if (!prop) return;
+    payload[prop.key] = renderRecord.values[prop.key];
+  });
+  return payload;
+}
+
+function collectAiAttachments(renderRecord, aiConfig) {
+  const attachmentIds = [...new Set((aiConfig.contextAttachmentPropertyIds || []).map(value => Number(value)).filter(Boolean))];
+  if (!attachmentIds.length) return [];
+
+  const items = [];
+  attachmentIds.forEach(propertyId => {
+    const files = Array.isArray(renderRecord.attachments?.[propertyId]) ? renderRecord.attachments[propertyId] : [];
+    files.forEach(file => {
+      if (items.length < AI_MAX_ATTACHMENT_ITEMS) items.push(file);
+    });
+  });
+  return items;
+}
+
+function prepareAiAttachmentContexts(attachments) {
+  return attachments.map((row, index) => {
+    const mimeType = String(row.mime_type || 'application/octet-stream');
+    const fileName = String(row.file_name || `attachment-${index + 1}`);
+    const isImage = isImageMimeType(mimeType, fileName);
+    const isPdf = isPdfMimeType(mimeType, fileName);
+    const isText = !isImage && !isPdf && isTextLikeMimeType(mimeType, fileName);
+    const meta = {
+      fileName,
+      mimeType,
+      sizeBytes: Number(row.size_bytes || 0),
+      propertyId: Number(row.property_id || 0) || null,
+      url: row.url || null,
+    };
+
+    if (isText) {
+      const extractedText = readAttachmentTextSnippet(row);
+      return { kind: 'text', meta, extractedText };
+    }
+
+    if ((isImage || isPdf) && Number(row.size_bytes || 0) <= AI_MAX_BINARY_ATTACHMENT_BYTES) {
+      const buffer = readAttachmentBinary(row);
+      return {
+        kind: isImage ? 'image' : 'document',
+        meta,
+        base64: buffer.toString('base64'),
+      };
+    }
+
+    return {
+      kind: isImage ? 'imageMeta' : (isPdf ? 'documentMeta' : 'fileMeta'),
+      meta,
+      extractedText: isText ? readAttachmentTextSnippet(row) : null,
+    };
+  });
+}
+
+function buildAiResponseContract(databaseId, prop, aiConfig) {
+  const lines = [
+    'Devuelve solo JSON válido, sin markdown ni texto adicional.',
+  ];
+
+  if (prop.type === 'singleSelect') {
+    const options = getPropertyOptions(databaseId, prop).map(option => option.label);
+    if (aiConfig.selectMode === 'existingOnly') {
+      lines.push(`Usa exclusivamente una opción existente en \"value\": ${JSON.stringify(options)}.`);
+      lines.push('Formato: {"value":"opcion-existente"}.');
+    } else {
+      lines.push(`Puedes usar opciones existentes o proponer una nueva. Opciones actuales: ${JSON.stringify(options)}.`);
+      lines.push('Formato: {"value":"opcion","newOptions":["opcion"]}. Si no creas opciones, omite newOptions.');
+    }
+  } else if (prop.type === 'multiSelect') {
+    const options = getPropertyOptions(databaseId, prop).map(option => option.label);
+    if (aiConfig.selectMode === 'existingOnly') {
+      lines.push(`Usa exclusivamente opciones existentes en \"value\": ${JSON.stringify(options)}.`);
+      lines.push('Formato: {"value":["opcion-1","opcion-2"]}.');
+    } else {
+      lines.push(`Puedes usar opciones existentes o proponer nuevas. Opciones actuales: ${JSON.stringify(options)}.`);
+      lines.push('Formato: {"value":["opcion-1"],"newOptions":["opcion-nueva"]}. Si no creas opciones, omite newOptions.');
+    }
+  } else if (prop.type === 'checkbox') {
+    lines.push('Formato: {"value": true} o {"value": false}.');
+  } else if (prop.type === 'date') {
+    lines.push('Formato: {"value":"YYYY-MM-DD"}.');
+  } else if (prop.type === 'time') {
+    lines.push('Formato: {"value":"HH:MM"}.');
+  } else if (prop.type === 'url') {
+    lines.push('Formato: {"value":"https://ejemplo.com/..."}.');
+  } else {
+    lines.push('Formato: {"value":"texto"}.');
+  }
+
+  return lines.join(' ');
+}
+
+function buildAiUserText(contextJson, attachmentContexts) {
+  const attachmentSummary = attachmentContexts.map(item => {
+    if (item.kind === 'text') {
+      return {
+        ...item.meta,
+        handling: 'text_extract',
+        extractedText: item.extractedText,
+      };
+    }
+    if (item.kind === 'image' || item.kind === 'document') {
+      return {
+        ...item.meta,
+        handling: 'binary_attached',
+      };
+    }
+    return {
+      ...item.meta,
+      handling: 'metadata_only',
+    };
+  });
+
+  return [
+    'Contexto estructurado de la fila:',
+    JSON.stringify(contextJson, null, 2),
+    '',
+    'Adjuntos disponibles:',
+    JSON.stringify(attachmentSummary, null, 2),
+  ].join('\n');
+}
+
+async function invokeOpenAiCompatibleProvider(provider, { apiKey, model, systemPrompt, userText, attachmentContexts }) {
+  const url = `${getAiProviderBaseUrl(provider)}/chat/completions`;
+
+  const content = [
+    { type: 'text', text: userText },
+  ];
+
+  attachmentContexts.forEach(item => {
+    if (item.kind === 'image' && item.base64) {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: `data:${item.meta.mimeType};base64,${item.base64}`,
+        },
+      });
+    }
+    if (item.kind === 'document' && item.base64) {
+      content.push({
+        type: 'file',
+        file: {
+          filename: item.meta.fileName,
+          file_data: `data:${item.meta.mimeType};base64,${item.base64}`,
+        },
+      });
+    }
+  });
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`,
+  };
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://dubydb.local';
+    headers['X-Title'] = 'dubyDB';
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content },
+      ],
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw createHttpError(json.error?.message || json.error || `Error IA (${provider}) HTTP ${response.status}`, response.status >= 500 ? 502 : 400);
+  }
+
+  const payload = json.choices?.[0]?.message?.content;
+  if (typeof payload === 'string') return payload;
+  if (Array.isArray(payload)) {
+    return payload.map(item => item?.text || item?.content || '').filter(Boolean).join('\n').trim();
+  }
+  return '';
+}
+
+async function invokeAnthropicProvider({ apiKey, model, systemPrompt, userText, attachmentContexts }) {
+  const content = [
+    { type: 'text', text: userText },
+  ];
+
+  attachmentContexts.forEach(item => {
+    if (item.kind === 'image' && item.base64) {
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: item.meta.mimeType,
+          data: item.base64,
+        },
+      });
+    }
+    if (item.kind === 'document' && item.base64) {
+      content.push({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: item.meta.mimeType,
+          data: item.base64,
+        },
+      });
+    }
+  });
+
+  const response = await fetch(`${getAiProviderBaseUrl('anthropic')}/messages`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1200,
+      system: systemPrompt,
+      messages: [{ role: 'user', content }],
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw createHttpError(json.error?.message || json.error?.type || `Error IA (anthropic) HTTP ${response.status}`, response.status >= 500 ? 502 : 400);
+  }
+
+  return Array.isArray(json.content)
+    ? json.content.map(item => item?.text || '').filter(Boolean).join('\n').trim()
+    : '';
+}
+
+async function invokeGeminiProvider({ apiKey, model, systemPrompt, userText, attachmentContexts }) {
+  const parts = [
+    { text: `${systemPrompt}\n\n${userText}` },
+  ];
+
+  attachmentContexts.forEach(item => {
+    if ((item.kind === 'image' || item.kind === 'document') && item.base64) {
+      parts.push({
+        inline_data: {
+          mime_type: item.meta.mimeType,
+          data: item.base64,
+        },
+      });
+    }
+  });
+
+  const response = await fetch(`${getAiProviderBaseUrl('gemini')}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{ parts }],
+      generationConfig: {
+        temperature: 0.2,
+      },
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw createHttpError(json.error?.message || `Error IA (gemini) HTTP ${response.status}`, response.status >= 500 ? 502 : 400);
+  }
+
+  const partsOut = json.candidates?.[0]?.content?.parts;
+  return Array.isArray(partsOut)
+    ? partsOut.map(item => item?.text || '').filter(Boolean).join('\n').trim()
+    : '';
+}
+
+async function generateAiRawText({ provider, apiKey, model, systemPrompt, userText, attachmentContexts }) {
+  if (provider === 'openai' || provider === 'openrouter') {
+    return invokeOpenAiCompatibleProvider(provider, { apiKey, model, systemPrompt, userText, attachmentContexts });
+  }
+  if (provider === 'anthropic') {
+    return invokeAnthropicProvider({ apiKey, model, systemPrompt, userText, attachmentContexts });
+  }
+  if (provider === 'gemini') {
+    return invokeGeminiProvider({ apiKey, model, systemPrompt, userText, attachmentContexts });
+  }
+  throw createHttpError('Proveedor IA no soportado.');
+}
+
+function parseAiRawValue(rawText, prop, databaseId, aiConfig) {
+  const text = String(rawText || '').trim();
+  if (!text) {
+    throw createHttpError('La IA no devolvió contenido utilizable.', 502);
+  }
+
+  const parsed = parseJson(text, null);
+  const rawValue = parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.prototype.hasOwnProperty.call(parsed, 'value')
+    ? parsed.value
+    : text;
+  const newOptions = parsed && typeof parsed === 'object' && Array.isArray(parsed.newOptions)
+    ? parsed.newOptions.map(item => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  if (prop.type === 'singleSelect' || prop.type === 'multiSelect') {
+    const existingOptions = getPropertyOptions(databaseId, prop);
+    const rawValues = prop.type === 'multiSelect'
+      ? (Array.isArray(rawValue) ? rawValue : String(rawValue || '').split(',').map(item => item.trim()).filter(Boolean))
+      : [Array.isArray(rawValue) ? rawValue[0] : rawValue];
+
+    const normalizedValues = rawValues
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+      .map(item => canonicalizeSelectOptionLabel(existingOptions, item) || item);
+
+    if (aiConfig.selectMode === 'existingOnly') {
+      const invalid = normalizedValues.find(item => !canonicalizeSelectOptionLabel(existingOptions, item));
+      if (invalid) {
+        throw createHttpError(`La IA devolvió una opción no permitida: ${invalid}.`, 502);
+      }
+      return {
+        value: prop.type === 'multiSelect' ? [...new Set(normalizedValues)] : (normalizedValues[0] || null),
+        newOptions: [],
+      };
+    }
+
+    const mergedNewOptions = [...new Set([
+      ...newOptions,
+      ...normalizedValues.filter(item => !canonicalizeSelectOptionLabel(existingOptions, item)),
+    ])];
+
+    return {
+      value: prop.type === 'multiSelect' ? [...new Set(normalizedValues)] : (normalizedValues[0] || null),
+      newOptions: mergedNewOptions,
+    };
+  }
+
+  if (prop.type === 'checkbox' && typeof rawValue === 'string') {
+    const lower = rawValue.trim().toLowerCase();
+    if (['true', '1', 'yes', 'si', 'sí'].includes(lower)) {
+      return { value: true, newOptions: [] };
+    }
+    if (['false', '0', 'no'].includes(lower)) {
+      return { value: false, newOptions: [] };
+    }
+  }
+
+  return { value: rawValue, newOptions: [] };
+}
+
+function appendAiOptionsToProperty(prop, optionsToCreate) {
+  if (!(prop.type === 'singleSelect' || prop.type === 'multiSelect')) return prop;
+  const normalized = [...new Set((optionsToCreate || []).map(item => String(item || '').trim()).filter(Boolean))];
+  if (!normalized.length) return prop;
+
+  const options = Array.isArray(prop.config?.options) ? [...prop.config.options] : [];
+  normalized.forEach(label => {
+    if (canonicalizeSelectOptionLabel(options, label)) return;
+    options.push({ label, color: nextTagColor(options.length) });
+  });
+  if (!options.length) return prop;
+
+  const nextConfig = {
+    ...(prop.config || {}),
+    options,
+  };
+  db.prepare('UPDATE properties SET config_json = ? WHERE id = ?').run(JSON.stringify(nextConfig), prop.id);
+  return {
+    ...prop,
+    config: nextConfig,
+  };
+}
+
+function getConfiguredAiProvider(aiConfig) {
+  const provider = String(aiConfig.provider || '').trim().toLowerCase();
+  if (!AI_PROVIDERS.includes(provider)) {
+    throw createHttpError('Proveedor IA no válido.');
+  }
+
+  const settings = getAppSettings();
+  const providerConfig = settings.ai?.providers?.[provider] || {};
+  const apiKey = decryptApiKey(providerConfig.apiKeyEncrypted);
+  const model = String(aiConfig.model || providerConfig.model || '').trim();
+  if (!apiKey) {
+    throw createHttpError('La API Key del proveedor IA no está configurada.', 400);
+  }
+  if (!model) {
+    throw createHttpError('El modelo IA no está configurado.', 400);
+  }
+  return { provider, apiKey, model };
+}
+
+function generateAiValueForRecord({ property, databaseId, recordId }) {
+  const aiConfig = sanitizeAiPropertyConfig(property.type, property.config?.ai || {});
+  if (!aiConfig.enabled) {
+    throw createHttpError('La propiedad no está configurada como IA.', 400);
+  }
+
+  const props = listProperties(databaseId);
+  const rows = loadRecordRows(databaseId);
+  applyRollups(databaseId, rows);
+  const recordRow = rows.find(item => Number(item.id) === Number(recordId));
+  if (!recordRow) {
+    throw createHttpError('Registro no encontrado.', 404);
+  }
+
+  let workingProperty = props.find(item => Number(item.id) === Number(property.id));
+  if (!workingProperty) {
+    throw createHttpError('Propiedad no encontrada.', 404);
+  }
+
+  const renderRecord = toRenderableRecord(databaseId, recordRow, props);
+  const contextJson = buildAiContextJson(renderRecord, props, aiConfig);
+  const attachmentRows = collectAiAttachments(renderRecord, aiConfig);
+  const attachmentContexts = prepareAiAttachmentContexts(attachmentRows);
+  const contract = buildAiResponseContract(databaseId, workingProperty, aiConfig);
+  const systemPrompt = `${aiConfig.systemPrompt}\n\n${contract}`;
+  const userText = buildAiUserText(contextJson, attachmentContexts);
+  const providerInfo = getConfiguredAiProvider(aiConfig);
+
+  return generateAiRawText({
+    ...providerInfo,
+    systemPrompt,
+    userText,
+    attachmentContexts,
+  }).then(rawText => {
+    const parsed = parseAiRawValue(rawText, workingProperty, databaseId, aiConfig);
+    if (parsed.newOptions.length) {
+      workingProperty = appendAiOptionsToProperty(workingProperty, parsed.newOptions);
+    }
+    const normalizedValue = normalizeStoredValueForProperty(workingProperty, parsed.value);
+    return {
+      value: normalizedValue,
+      provider: providerInfo.provider,
+      model: providerInfo.model,
+      rawText,
+      createdOptions: parsed.newOptions,
+    };
+  });
+}
+
 function sanitizePropertyConfig(type, config) {
   const next = { ...(config || {}) };
   if (type === 'singleSelect' || type === 'multiSelect') {
@@ -1979,6 +2618,13 @@ function sanitizePropertyConfig(type, config) {
     next.relationPropertyId = Number(next.relationPropertyId || 0) || null;
     next.relatedPropertyId = Number(next.relatedPropertyId || 0) || null;
     next.calculate = String(next.calculate || 'showOriginal');
+  }
+
+  const aiConfig = sanitizeAiPropertyConfig(type, next.ai || {});
+  if (aiConfig.enabled && supportsAiForPropertyType(type)) {
+    next.ai = aiConfig;
+  } else {
+    delete next.ai;
   }
 
   return next;
@@ -2154,13 +2800,62 @@ function assertPropertyConfigIsValid(databaseId, type, config, options = {}) {
       throw createHttpError('La propiedad relacionada del rollup no pertenece a las bases enlazadas.');
     }
   }
+
+  if (config.ai?.enabled) {
+    if (!supportsAiForPropertyType(type)) {
+      throw createHttpError('La IA solo está disponible en propiedades compatibles.');
+    }
+
+    if (!config.ai.systemPrompt) {
+      throw createHttpError('La propiedad IA necesita un prompt del sistema.');
+    }
+
+    if (!config.ai.contextPropertyIds.length) {
+      throw createHttpError('La propiedad IA necesita al menos una propiedad de contexto.');
+    }
+
+    if (!AI_PROVIDERS.includes(String(config.ai.provider || ''))) {
+      throw createHttpError('La propiedad IA necesita un proveedor válido.');
+    }
+
+    if (!String(config.ai.model || '').trim()) {
+      throw createHttpError('La propiedad IA necesita un modelo válido.');
+    }
+
+    const props = listProperties(databaseId);
+    const propById = new Map(props.map(prop => [Number(prop.id), prop]));
+
+    config.ai.contextPropertyIds.forEach(contextPropertyId => {
+      if (propertyId && Number(contextPropertyId) === Number(propertyId)) {
+        throw createHttpError('La propiedad IA no puede usarse a sí misma como contexto directo.');
+      }
+      const prop = propById.get(Number(contextPropertyId));
+      if (!prop) {
+        throw createHttpError('La propiedad IA referencia una propiedad de contexto inexistente.');
+      }
+      if (prop.type === 'attachment') {
+        throw createHttpError('Los adjuntos deben configurarse en el contexto extendido, no en propiedades de contexto.');
+      }
+    });
+
+    config.ai.contextAttachmentPropertyIds.forEach(contextPropertyId => {
+      const prop = propById.get(Number(contextPropertyId));
+      if (!prop || prop.type !== 'attachment') {
+        throw createHttpError('El contexto extendido solo admite propiedades de adjuntos válidas.');
+      }
+    });
+
+    if ((type === 'singleSelect' || type === 'multiSelect') && config.ai.selectMode === 'existingOnly' && !config.options?.length) {
+      throw createHttpError('La propiedad IA necesita opciones existentes para restringir la selección.');
+    }
+  }
 }
 
 function cleanupPropertyConfigReferences(propertyId) {
   const rows = db.prepare(`
     SELECT id, type, config_json
     FROM properties
-    WHERE type IN ('relation', 'rollup')
+    WHERE 1 = 1
   `).all();
   const updateStmt = db.prepare('UPDATE properties SET config_json = ? WHERE id = ?');
 
@@ -2180,6 +2875,19 @@ function cleanupPropertyConfigReferences(propertyId) {
       }
       if (Number(config.relatedPropertyId || 0) === Number(propertyId)) {
         config.relatedPropertyId = null;
+        changed = true;
+      }
+    }
+
+    if (config.ai?.enabled) {
+      const nextContextPropertyIds = (config.ai.contextPropertyIds || []).filter(value => Number(value) !== Number(propertyId));
+      const nextAttachmentPropertyIds = (config.ai.contextAttachmentPropertyIds || []).filter(value => Number(value) !== Number(propertyId));
+      if (nextContextPropertyIds.length !== config.ai.contextPropertyIds.length) {
+        config.ai.contextPropertyIds = nextContextPropertyIds;
+        changed = true;
+      }
+      if (nextAttachmentPropertyIds.length !== config.ai.contextAttachmentPropertyIds.length) {
+        config.ai.contextAttachmentPropertyIds = nextAttachmentPropertyIds;
         changed = true;
       }
     }
@@ -2289,6 +2997,15 @@ function remapPropertyConfigReferences(type, config, propertyIdMap) {
   if (type === 'rollup') {
     next.relationPropertyId = Number(propertyIdMap.get(Number(next.relationPropertyId || 0)) || 0) || null;
     next.relatedPropertyId = Number(propertyIdMap.get(Number(next.relatedPropertyId || 0)) || 0) || null;
+  }
+
+  if (next.ai?.enabled) {
+    next.ai.contextPropertyIds = Array.isArray(next.ai.contextPropertyIds)
+      ? next.ai.contextPropertyIds.map(value => Number(propertyIdMap.get(Number(value || 0)) || 0)).filter(Boolean)
+      : [];
+    next.ai.contextAttachmentPropertyIds = Array.isArray(next.ai.contextAttachmentPropertyIds)
+      ? next.ai.contextAttachmentPropertyIds.map(value => Number(propertyIdMap.get(Number(value || 0)) || 0)).filter(Boolean)
+      : [];
   }
 
   return next;
@@ -2632,6 +3349,172 @@ app.post('/api/settings/webhooks/test', (req, res) => {
 
   res.json({ ok: true, queued: true });
 });
+
+app.get('/api/settings/ai-provider', (_req, res) => {
+  const settings = getAppSettings();
+  res.json(toPublicAiSettings(settings));
+});
+
+app.post('/api/settings/ai-provider', (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const provider = String(body.provider || '').trim().toLowerCase();
+  if (!AI_PROVIDERS.includes(provider)) {
+    return res.status(400).json({ error: 'Proveedor no válido' });
+  }
+
+  const settings = getAppSettings();
+  const providers = { ...(settings.ai?.providers || {}) };
+  const apiKey = String(body.apiKey || '').trim();
+  const model = String(body.model || '').trim().slice(0, 200);
+  const active = body.active === true;
+  const setActive = body.setActive === true;
+
+  if (apiKey) {
+    providers[provider] = {
+      ...providers[provider],
+      apiKeyEncrypted: encryptApiKey(apiKey),
+    };
+  }
+
+  if (model) {
+    providers[provider] = {
+      ...providers[provider],
+      apiKeyEncrypted: providers[provider]?.apiKeyEncrypted || null,
+      model,
+    };
+  }
+
+  let activeProvider = settings.ai?.activeProvider || null;
+  if (setActive) {
+    if (active) {
+      activeProvider = provider;
+    } else if (activeProvider === provider) {
+      activeProvider = null;
+    }
+  }
+
+  const nextRaw = {
+    ...settings,
+    ai: {
+      activeProvider,
+      providers,
+    },
+  };
+
+  const next = saveAppSettings(nextRaw);
+  logActivity({
+    entityType: 'ai_provider',
+    action: apiKey ? 'key_updated' : 'model_updated',
+    summary: `Proveedor IA "${provider}" actualizado`,
+    payload: { provider, hasKey: Boolean(apiKey), model: model || null },
+  });
+  res.json(toPublicAiSettings(next));
+});
+
+app.delete('/api/settings/ai-provider/:provider', (req, res) => {
+  const provider = String(req.params.provider || '').trim().toLowerCase();
+  if (!AI_PROVIDERS.includes(provider)) {
+    return res.status(400).json({ error: 'Proveedor no válido' });
+  }
+
+  const settings = getAppSettings();
+  const providers = { ...(settings.ai?.providers || {}) };
+  delete providers[provider];
+
+  let activeProvider = settings.ai?.activeProvider || null;
+  if (activeProvider === provider) {
+    activeProvider = null;
+  }
+
+  const nextRaw = {
+    ...settings,
+    ai: {
+      activeProvider,
+      providers,
+    },
+  };
+
+  const next = saveAppSettings(nextRaw);
+  logActivity({
+    entityType: 'ai_provider',
+    action: 'key_deleted',
+    summary: `Clave IA "${provider}" eliminada`,
+  });
+  res.json(toPublicAiSettings(next));
+});
+
+app.get('/api/settings/ai-provider/:provider/models', async (req, res) => {
+  const provider = String(req.params.provider || '').trim().toLowerCase();
+  if (!AI_PROVIDERS.includes(provider)) {
+    return res.status(400).json({ error: 'Proveedor no válido' });
+  }
+
+  const settings = getAppSettings();
+  const providerConfig = settings.ai?.providers?.[provider] || {};
+  const apiKey = decryptApiKey(providerConfig.apiKeyEncrypted);
+
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API Key no configurada para este proveedor' });
+  }
+
+  try {
+    const models = await fetchProviderModels(provider, apiKey);
+    res.json({ models });
+  } catch (error) {
+    console.error(`[AI MODELS] ${provider}:`, error.message);
+    const status = error.message?.includes('401') || error.message?.includes('403') ? 401 : 502;
+    res.status(status).json({ error: `Error al obtener modelos: ${error.message}` });
+  }
+});
+
+async function fetchProviderModels(provider, apiKey) {
+  let url, headers, responseKey, mapFn;
+
+  switch (provider) {
+    case 'openrouter':
+      url = `${getAiProviderBaseUrl('openrouter')}/models`;
+      headers = { 'Authorization': `Bearer ${apiKey}` };
+      responseKey = 'data';
+      mapFn = (item) => item.id;
+      break;
+    case 'openai':
+      url = `${getAiProviderBaseUrl('openai')}/models`;
+      headers = { 'Authorization': `Bearer ${apiKey}` };
+      responseKey = 'data';
+      mapFn = (item) => item.id;
+      break;
+    case 'gemini':
+      url = `${getAiProviderBaseUrl('gemini')}/models?key=${encodeURIComponent(apiKey)}`;
+      headers = {};
+      responseKey = 'models';
+      mapFn = (item) => item.name.replace(/^models\//, '');
+      break;
+    case 'anthropic':
+      url = `${getAiProviderBaseUrl('anthropic')}/models`;
+      headers = {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      };
+      responseKey = 'data';
+      mapFn = (item) => item.id;
+      break;
+    default:
+      throw new Error('Proveedor no soportado');
+  }
+
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const json = await response.json();
+  const list = Array.isArray(json[responseKey]) ? json[responseKey] : [];
+
+  return list
+    .map(item => mapFn(item))
+    .filter(id => id && typeof id === 'string')
+    .sort((a, b) => a.localeCompare(b));
+}
 
 app.get('/api/webhooks/deliveries', (req, res) => {
   const limit = Math.min(500, Math.max(1, Number(req.query.limit || 100)));
@@ -3354,6 +4237,109 @@ app.get('/api/properties/:id/options', (req, res) => {
   if (!fullProp) return res.status(404).json({ error: 'Propiedad no encontrada' });
 
   res.json(getPropertyOptions(row.database_id, fullProp));
+});
+
+app.post('/api/properties/:id/ai/generate', async (req, res) => {
+  const propertyId = Number(req.params.id);
+  const row = db.prepare('SELECT id, database_id FROM properties WHERE id = ?').get(propertyId);
+  if (!row) return res.status(404).json({ error: 'Propiedad no encontrada' });
+
+  const property = listProperties(row.database_id).find(item => Number(item.id) === propertyId);
+  if (!property) return res.status(404).json({ error: 'Propiedad no encontrada' });
+  if (!isAiProperty(property)) {
+    return res.status(400).json({ error: 'La propiedad no está configurada como Propiedad IA.' });
+  }
+
+  const body = req.body || {};
+  const recordId = Number(body.recordId || 0);
+  const overwrite = body.overwrite === true;
+  if (!recordId) {
+    return res.status(400).json({ error: 'recordId obligatorio.' });
+  }
+
+  const record = getRecordById(recordId);
+  if (!record || Number(record.database_id) !== Number(row.database_id)) {
+    return res.status(404).json({ error: 'Registro no encontrado en esta base.' });
+  }
+
+  const currentRenderable = (() => {
+    const props = listProperties(row.database_id);
+    const rows = loadRecordRows(row.database_id);
+    applyRollups(row.database_id, rows);
+    const targetRow = rows.find(item => Number(item.id) === recordId);
+    return targetRow ? toRenderableRecord(row.database_id, targetRow, props) : null;
+  })();
+
+  if (!currentRenderable) {
+    return res.status(404).json({ error: 'Registro no encontrado.' });
+  }
+
+  const currentValue = currentRenderable.values[property.key];
+  const hasCurrentValue = Array.isArray(currentValue)
+    ? currentValue.length > 0
+    : !(currentValue === null || currentValue === undefined || String(currentValue).trim() === '');
+  if (hasCurrentValue && !overwrite) {
+    return res.json({
+      ok: true,
+      skipped: true,
+      reason: 'already_filled',
+      value: currentValue,
+    });
+  }
+
+  try {
+    const result = await generateAiValueForRecord({
+      property,
+      databaseId: row.database_id,
+      recordId,
+    });
+
+    db.prepare(`
+      INSERT INTO record_values(record_id, property_id, value_json)
+      VALUES(?, ?, ?)
+      ON CONFLICT(record_id, property_id) DO UPDATE SET value_json = excluded.value_json
+    `).run(recordId, propertyId, JSON.stringify(result.value));
+
+    const ts = nowIso();
+    db.prepare('UPDATE records SET updated_at = ? WHERE id = ?').run(ts, recordId);
+    db.prepare('UPDATE databases SET updated_at = ? WHERE id = ?').run(ts, row.database_id);
+    emitWebhookEvent('record.content.updated', {
+      databaseId: row.database_id,
+      recordId,
+      propertyId,
+      propertyKey: property.key,
+      source: 'ai',
+    });
+    logActivity({
+      databaseId: row.database_id,
+      recordId,
+      entityType: 'record',
+      entityId: recordId,
+      action: 'ai_completed',
+      summary: `IA completó ${property.name} con ${result.provider}/${result.model}`,
+      payload: {
+        propertyId,
+        propertyKey: property.key,
+        provider: result.provider,
+        model: result.model,
+        overwrite,
+        createdOptions: result.createdOptions,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      skipped: false,
+      value: result.value,
+      provider: result.provider,
+      model: result.model,
+      createdOptions: result.createdOptions,
+    });
+  } catch (error) {
+    console.error('[AI PROPERTY]', propertyId, recordId, error.message);
+    const status = Number(error.status || 0) || 502;
+    return res.status(status).json({ error: error.message || 'No se pudo completar la propiedad IA.' });
+  }
 });
 
 app.get('/api/databases/:id/records', (req, res) => {

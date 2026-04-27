@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- AI properties that can enrich rows from other properties plus attached documents and images, with per-cell and per-column generation flows.
+- Provider/model-aware AI autofill audit entries and integration coverage for AI property validation, model loading, option creation, and value persistence.
+
+### Changed
+- AI provider HTTP endpoints can now be overridden with environment variables to support local stubs and deterministic integration tests.
+
 ## [0.0.3] - 2026-03-08
 
 ### Changed

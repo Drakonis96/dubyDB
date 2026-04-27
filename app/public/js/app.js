@@ -27,6 +27,9 @@ const STATE = {
   viewLoading: false,
   viewLoadingMessage: '',
   lastFeedback: null,
+  aiModelsCache: {},
+  aiCellStates: {},
+  aiColumnRuns: {},
 };
 
 const I18N = {
@@ -39,7 +42,8 @@ const I18N = {
     deleteRecordConfirm: '¿Eliminar registro?',
     addRow: 'Nueva fila',
     globalSettings: 'Ajustes generales',
-    generalTab: 'General',
+  aiCellStates: {},
+  aiColumnRuns: {},
     interfaceTab: 'Interfaz',
     backupTab: 'Backup',
     dangerTab: 'Danger Zone',
@@ -136,6 +140,9 @@ const PROPERTY_TYPES = [
   { value: 'rollup', labelEs: 'Rollup', labelEn: 'Rollup' },
 ];
 
+const AI_PROPERTY_TYPE = { value: 'ai', labelEs: 'Propiedad IA', labelEn: 'AI property' };
+const AI_OUTPUT_TYPE_VALUES = ['text', 'singleSelect', 'multiSelect', 'url', 'checkbox', 'date', 'time'];
+
 const DATABASE_TEMPLATES = [
   {
     key: 'photoArchive',
@@ -213,6 +220,13 @@ const API_KEY_SCOPE_OPTIONS = [
   { value: 'settings', labelEs: 'Ajustes', labelEn: 'Settings' },
   { value: 'backup', labelEs: 'Backup / Restore', labelEn: 'Backup / Restore' },
 ];
+
+const AI_PROVIDER_INFO = {
+  openrouter: { name: 'OpenRouter', keyPlaceholder: 'sk-or-v1-...' },
+  openai: { name: 'OpenAI', keyPlaceholder: 'sk-...' },
+  gemini: { name: 'Google Gemini', keyPlaceholder: 'AIza...' },
+  anthropic: { name: 'Anthropic', keyPlaceholder: 'sk-ant-api03-...' },
+};
 
 const COLOR_HEX_BY_NAME = {
   blue: '#d3e5ef',
@@ -908,6 +922,233 @@ function findSelectOption(options, label) {
 function getNextTagColor(indexSeed = 0) {
   if (!STATE.tagColors.length) return 'gray';
   return STATE.tagColors[indexSeed % STATE.tagColors.length] || 'gray';
+}
+
+function supportsAiPropertyType(type) {
+  return AI_OUTPUT_TYPE_VALUES.includes(String(type || '').trim());
+}
+
+function isAiProperty(prop) {
+  return Boolean(prop?.config?.ai?.enabled);
+}
+
+function aiConfigForProperty(prop) {
+  const existing = prop?.config?.ai || {};
+  const baseType = supportsAiPropertyType(prop?.type) ? prop.type : 'text';
+  const activeProvider = STATE.appSettings?.ai?.activeProvider || '';
+  const fallbackProvider = Object.entries(STATE.appSettings?.ai?.providers || {}).find(([, config]) => config?.isConfigured)?.[0] || activeProvider || 'openai';
+
+  return {
+    enabled: Boolean(existing.enabled),
+    originalType: existing.originalType || baseType,
+    responseType: existing.responseType || baseType,
+    contextPropertyIds: Array.isArray(existing.contextPropertyIds) ? existing.contextPropertyIds.map(Number).filter(Boolean) : [],
+    contextAttachmentPropertyIds: Array.isArray(existing.contextAttachmentPropertyIds) ? existing.contextAttachmentPropertyIds.map(Number).filter(Boolean) : [],
+    systemPrompt: String(existing.systemPrompt || ''),
+    provider: existing.provider || fallbackProvider,
+    model: existing.model || STATE.appSettings?.ai?.providers?.[existing.provider || fallbackProvider]?.model || '',
+    selectMode: existing.selectMode === 'allowNew' ? 'allowNew' : 'existingOnly',
+  };
+}
+
+function compatibleAiOutputTypes() {
+  return PROPERTY_TYPES.filter(item => AI_OUTPUT_TYPE_VALUES.includes(item.value));
+}
+
+function typeItemByValue(value) {
+  if (value === 'ai') return AI_PROPERTY_TYPE;
+  return PROPERTY_TYPES.find(item => item.value === value) || PROPERTY_TYPES[0];
+}
+
+function buildAiContextPropertyOptions(selectedIds = [], excludePropertyId = null) {
+  const selected = new Set((selectedIds || []).map(Number));
+  return (STATE.selectedDatabase?.properties || [])
+    .filter(prop => Number(prop.id) !== Number(excludePropertyId || 0) && prop.type !== 'attachment')
+    .map(prop => `<option value="${prop.id}" ${selected.has(prop.id) ? 'selected' : ''}>${escapeHtml(prop.name)} (${escapeHtml(typeLabel(typeItemByValue(prop.type)))})</option>`)
+    .join('');
+}
+
+function buildAiAttachmentPropertyOptions(selectedIds = [], excludePropertyId = null) {
+  const selected = new Set((selectedIds || []).map(Number));
+  return (STATE.selectedDatabase?.properties || [])
+    .filter(prop => Number(prop.id) !== Number(excludePropertyId || 0) && prop.type === 'attachment')
+    .map(prop => `<option value="${prop.id}" ${selected.has(prop.id) ? 'selected' : ''}>${escapeHtml(prop.name)}</option>`)
+    .join('');
+}
+
+function buildAiProviderOptions(selectedProvider = '') {
+  return Object.entries(AI_PROVIDER_INFO).map(([providerId, info]) => {
+    const configured = STATE.appSettings?.ai?.providers?.[providerId]?.isConfigured;
+    const suffix = configured ? '' : ` · ${tr('sin clave', 'no key')}`;
+    return `<option value="${escapeHtml(providerId)}" ${providerId === selectedProvider ? 'selected' : ''}>${escapeHtml(info.name + suffix)}</option>`;
+  }).join('');
+}
+
+function renderAiConfigFields({ prefix, baseType, aiConfig, excludePropertyId = null }) {
+  const config = aiConfig || aiConfigForProperty({ type: baseType, config: {} });
+  const contextOptions = buildAiContextPropertyOptions(config.contextPropertyIds, excludePropertyId);
+  const attachmentOptions = buildAiAttachmentPropertyOptions(config.contextAttachmentPropertyIds, excludePropertyId);
+  const showSelectMode = baseType === 'singleSelect' || baseType === 'multiSelect';
+
+  return `
+    <div class="ai-property-config-grid">
+      <div class="columns-2">
+        <label>${escapeHtml(tr('Proveedor IA', 'AI provider'))}
+          <select id="${prefix}AiProvider">${buildAiProviderOptions(config.provider)}</select>
+        </label>
+        <label>${escapeHtml(tr('Modelo', 'Model'))}
+          <select id="${prefix}AiModel"><option value="">${escapeHtml(tr('Cargando modelos…', 'Loading models...'))}</option></select>
+        </label>
+      </div>
+      <div id="${prefix}AiModelStatus" class="count"></div>
+      <div class="columns-2">
+        <label>${escapeHtml(tr('Propiedades de contexto', 'Context properties'))}
+          <select id="${prefix}AiContextProperties" multiple size="6">${contextOptions}</select>
+        </label>
+        <label>${escapeHtml(tr('Contexto extendido: adjuntos e imágenes', 'Extended context: files and images'))}
+          <select id="${prefix}AiContextAttachments" multiple size="6">${attachmentOptions}</select>
+        </label>
+      </div>
+      <label>${escapeHtml(tr('Prompt del sistema', 'System prompt'))}
+        <textarea id="${prefix}AiSystemPrompt" rows="5" placeholder="${escapeHtml(tr('Describe qué debe devolver la IA y cómo debe decidirlo.', 'Describe what the AI should return and how it should decide.'))}">${escapeHtml(config.systemPrompt || '')}</textarea>
+      </label>
+      <div id="${prefix}AiSelectModeWrap" class="${showSelectMode ? '' : 'hidden'}">
+        <label>${escapeHtml(tr('Salida de selección', 'Selection output'))}
+          <select id="${prefix}AiSelectMode">
+            <option value="existingOnly" ${config.selectMode !== 'allowNew' ? 'selected' : ''}>${escapeHtml(tr('Solo usar opciones existentes', 'Use existing options only'))}</option>
+            <option value="allowNew" ${config.selectMode === 'allowNew' ? 'selected' : ''}>${escapeHtml(tr('Permitir crear nuevas opciones', 'Allow creating new options'))}</option>
+          </select>
+        </label>
+        <div class="count">${escapeHtml(tr('Las opciones existentes de la propiedad se usan como vocabulario base.', 'Existing property options are used as the base vocabulary.'))}</div>
+      </div>
+    </div>
+  `;
+}
+
+function setAiModelSelectOptions(prefix, models, selectedModel = '') {
+  const select = document.getElementById(`${prefix}AiModel`);
+  if (!select) return;
+
+  const list = Array.isArray(models) ? models.filter(Boolean) : [];
+  const unique = [...new Set(list.map(item => String(item)))];
+  if (selectedModel && !unique.includes(selectedModel)) unique.unshift(selectedModel);
+
+  if (!unique.length) {
+    select.innerHTML = `<option value="">${escapeHtml(tr('Sin modelos disponibles', 'No models available'))}</option>`;
+    return;
+  }
+
+  select.innerHTML = unique.map(model => `<option value="${escapeHtml(model)}" ${model === selectedModel ? 'selected' : ''}>${escapeHtml(model)}</option>`).join('');
+  if (!selectedModel) select.value = unique[0];
+}
+
+async function loadAiModelOptions(prefix, providerId, selectedModel = '') {
+  const status = document.getElementById(`${prefix}AiModelStatus`);
+  const select = document.getElementById(`${prefix}AiModel`);
+  if (!select) return;
+
+  if (!providerId) {
+    setAiModelSelectOptions(prefix, [], selectedModel);
+    if (status) status.textContent = '';
+    return;
+  }
+
+  select.disabled = true;
+  setAiModelSelectOptions(prefix, [], selectedModel);
+  if (status) status.textContent = tr('Cargando modelos…', 'Loading models...');
+
+  try {
+    let models = STATE.aiModelsCache[providerId];
+    if (!models) {
+      const response = await api(`/api/settings/ai-provider/${encodeURIComponent(providerId)}/models`);
+      models = Array.isArray(response.models) ? response.models : [];
+      STATE.aiModelsCache[providerId] = models;
+    }
+    setAiModelSelectOptions(prefix, models, selectedModel || STATE.appSettings?.ai?.providers?.[providerId]?.model || '');
+    if (status) {
+      status.textContent = models.length
+        ? tr(`${models.length} modelos cargados`, `${models.length} models loaded`)
+        : tr('No se encontraron modelos para este proveedor.', 'No models found for this provider.');
+    }
+  } catch (error) {
+    setAiModelSelectOptions(prefix, [], selectedModel || '');
+    if (status) status.textContent = error.message;
+  } finally {
+    select.disabled = false;
+  }
+}
+
+function refreshAiSelectModeVisibility(prefix, baseType) {
+  const wrap = document.getElementById(`${prefix}AiSelectModeWrap`);
+  if (!wrap) return;
+  const show = baseType === 'singleSelect' || baseType === 'multiSelect';
+  wrap.classList.toggle('hidden', !show);
+}
+
+function bindAiConfigControls(prefix, getBaseType, selectedModel = '') {
+  const providerSelect = document.getElementById(`${prefix}AiProvider`);
+  if (!providerSelect) return;
+
+  const refresh = async () => {
+    refreshAiSelectModeVisibility(prefix, getBaseType());
+    await loadAiModelOptions(prefix, providerSelect.value, selectedModel);
+  };
+
+  if (providerSelect.dataset.aiBound !== '1') {
+    providerSelect.addEventListener('change', () => {
+      loadAiModelOptions(prefix, providerSelect.value, '');
+    });
+    providerSelect.dataset.aiBound = '1';
+  }
+
+  refresh();
+}
+
+function selectedNumericValues(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select) return [];
+  return [...select.selectedOptions].map(option => Number(option.value)).filter(Boolean);
+}
+
+function collectAiConfigFromForm(prefix, baseType, prop = null) {
+  return {
+    enabled: true,
+    originalType: prop?.config?.ai?.originalType || prop?.type || baseType,
+    responseType: baseType,
+    contextPropertyIds: selectedNumericValues(`${prefix}AiContextProperties`),
+    contextAttachmentPropertyIds: selectedNumericValues(`${prefix}AiContextAttachments`),
+    systemPrompt: document.getElementById(`${prefix}AiSystemPrompt`)?.value?.trim() || '',
+    provider: document.getElementById(`${prefix}AiProvider`)?.value || '',
+    model: document.getElementById(`${prefix}AiModel`)?.value || '',
+    selectMode: document.getElementById(`${prefix}AiSelectMode`)?.value === 'allowNew' ? 'allowNew' : 'existingOnly',
+  };
+}
+
+function stripAiConfig(config) {
+  const next = { ...(config || {}) };
+  delete next.ai;
+  return next;
+}
+
+function aiCellStateKey(recordId, propertyId) {
+  return `${Number(recordId || 0)}:${Number(propertyId || 0)}`;
+}
+
+function setAiCellState(recordId, propertyId, state) {
+  const key = aiCellStateKey(recordId, propertyId);
+  if (!state) {
+    delete STATE.aiCellStates[key];
+    return;
+  }
+  STATE.aiCellStates[key] = state;
+}
+
+function getAiCellState(recordId, propertyId) {
+  return STATE.aiCellStates[aiCellStateKey(recordId, propertyId)] || null;
+}
+
+function buildPropertyTypeOptions(options, selectedValue) {
+  return options.map(item => `<option value="${item.value}" ${item.value === selectedValue ? 'selected' : ''}>${escapeHtml(typeLabel(item))}</option>`).join('');
 }
 
 function closeSelectOptionMenu() {
@@ -2889,6 +3130,7 @@ async function saveInlineValue(recordId, prop, nextValue) {
   if (prop.type === 'autoId' || prop.type === 'rollup' || prop.type === 'attachment') return;
   const normalized = normalizeInlineValue(prop, nextValue);
   await ensureSelectOptionsFromInline(prop, normalized);
+  setAiCellState(recordId, prop.id, null);
   await api(`/api/records/${recordId}`, {
     method: 'PUT',
     body: {
@@ -2900,6 +3142,169 @@ async function saveInlineValue(recordId, prop, nextValue) {
   await loadRecords();
   await refreshBootstrap();
   setLastFeedback('success', tr('Guardado automático', 'Autosaved'));
+}
+
+async function fetchAllFilteredRecords() {
+  const collected = [];
+  const pageSize = 500;
+  let page = 1;
+  let total = 0;
+
+  do {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      search: STATE.search,
+      filters: JSON.stringify(currentFiltersPayload()),
+      sorts: JSON.stringify(STATE.sorts || []),
+    });
+    if (STATE.sorts?.length) {
+      params.set('sortPropertyId', String(STATE.sorts[0].propertyId));
+      params.set('sortDir', STATE.sorts[0].dir);
+    }
+
+    const response = await api(`/api/databases/${STATE.selectedDatabaseId}/records?${params.toString()}`);
+    total = Number(response.total || 0);
+    collected.push(...(Array.isArray(response.data) ? response.data : []));
+    page += 1;
+    if (!response.data?.length) break;
+  } while (collected.length < total);
+
+  return collected;
+}
+
+function scheduleAiCellStateReset(recordId, propertyId) {
+  window.setTimeout(() => {
+    const state = getAiCellState(recordId, propertyId);
+    if (state?.status !== 'success') return;
+    setAiCellState(recordId, propertyId, null);
+    renderActiveView();
+  }, 1800);
+}
+
+async function runAiForCell(recordId, prop, options = {}) {
+  if (!recordId || !isAiProperty(prop)) return null;
+  const overwrite = options.overwrite !== false;
+  const reloadAfter = options.reloadAfter !== false;
+  const silent = options.silent === true;
+
+  setAiCellState(recordId, prop.id, { status: 'loading' });
+  renderActiveView();
+
+  try {
+    const result = await api(`/api/properties/${prop.id}/ai/generate`, {
+      method: 'POST',
+      body: { recordId, overwrite },
+    });
+
+    if (result.skipped) {
+      setAiCellState(recordId, prop.id, null);
+      if (reloadAfter) {
+        await loadRecords();
+        await refreshBootstrap();
+      } else {
+        renderActiveView();
+      }
+      return result;
+    }
+
+    setAiCellState(recordId, prop.id, {
+      status: 'success',
+      provider: result.provider || '',
+      model: result.model || '',
+    });
+
+    if (reloadAfter) {
+      await loadRecords();
+      await refreshBootstrap();
+    } else {
+      renderActiveView();
+    }
+    scheduleAiCellStateReset(recordId, prop.id);
+    return result;
+  } catch (error) {
+    setAiCellState(recordId, prop.id, {
+      status: 'error',
+      message: error.message || tr('No se pudo completar la celda con IA.', 'Could not fill the cell with AI.'),
+    });
+    renderActiveView();
+    if (!silent) {
+      showToast(error.message || tr('No se pudo completar la celda con IA.', 'Could not fill the cell with AI.'), 'error', 3600);
+      setLastFeedback('error', error.message || tr('No se pudo completar la celda con IA.', 'Could not fill the cell with AI.'), { timeoutMs: 3600 });
+    }
+    throw error;
+  }
+}
+
+async function executeAiAutofill(prop, candidates, overwrite) {
+  const total = candidates.length;
+  let completed = 0;
+  let failed = 0;
+  STATE.aiColumnRuns[prop.id] = { total, completed, failed, overwrite };
+
+  try {
+    for (const record of candidates) {
+      setViewLoading(true, tr(`IA ${prop.name}: ${completed}/${total}`, `AI ${prop.name}: ${completed}/${total}`));
+      try {
+        await runAiForCell(record.id, prop, { overwrite, reloadAfter: false, silent: true });
+      } catch (_error) {
+        failed += 1;
+      }
+      completed += 1;
+      STATE.aiColumnRuns[prop.id] = { total, completed, failed, overwrite };
+    }
+
+    await loadRecords();
+    await refreshBootstrap();
+
+    if (failed > 0) {
+      showToast(tr(`IA completada con ${failed} errores`, `AI completed with ${failed} errors`), 'warning', 3600);
+      setLastFeedback('warning', tr(`Proceso IA terminado con ${failed} errores`, `AI run finished with ${failed} errors`), { timeoutMs: 3600 });
+    } else {
+      showToast(tr(`IA completada en ${total} fila(s)`, `AI completed for ${total} row(s)`), 'success');
+      setLastFeedback('success', tr(`IA completada en ${total} fila(s)`, `AI completed for ${total} row(s)`));
+    }
+  } finally {
+    delete STATE.aiColumnRuns[prop.id];
+    setViewLoading(false);
+    renderActiveView();
+  }
+}
+
+async function runAiAutofillForProperty(prop, overwrite) {
+  if (!isAiProperty(prop)) return;
+  const records = await fetchAllFilteredRecords();
+  const candidates = overwrite
+    ? records
+    : records.filter(record => !hasMeaningfulValue(prop, record.values[prop.key]));
+
+  if (!candidates.length) {
+    showToast(tr('No hay filas pendientes para esta propiedad IA.', 'There are no pending rows for this AI property.'), 'warning');
+    return;
+  }
+
+  const message = overwrite
+    ? tr(`Se procesarán ${candidates.length} filas y se sobrescribirán los valores existentes. Esto puede generar múltiples llamadas de pago a la API.`, `This will process ${candidates.length} rows and overwrite existing values. This may trigger multiple paid API calls.`)
+    : tr(`Se procesarán ${candidates.length} filas vacías. Esto puede generar múltiples llamadas de pago a la API.`, `This will process ${candidates.length} empty rows. This may trigger multiple paid API calls.`);
+
+  openConfirmMini({
+    message,
+    confirmText: overwrite ? tr('Autocompletar todo', 'Autofill all') : tr('Autocompletar vacías', 'Autofill empty'),
+    danger: overwrite,
+    onConfirm: async () => {
+      await executeAiAutofill(prop, candidates, overwrite);
+    },
+  });
+}
+
+async function revertAiProperty(prop) {
+  await api(`/api/properties/${prop.id}`, {
+    method: 'PUT',
+    body: {
+      config: stripAiConfig(prop.config || {}),
+    },
+  });
+  await reloadSelectedDatabase();
 }
 
 async function uploadAttachments(recordId, propertyId, files) {
@@ -2921,6 +3326,50 @@ async function uploadAttachments(recordId, propertyId, files) {
   showToast(successMessage, 'success');
   setLastFeedback('success', successMessage);
   return payload;
+}
+
+function wrapAiCellControl({ prop, recordId, isDraft, control }) {
+  if (!isAiProperty(prop) || !recordId || isDraft) return control;
+
+  const state = getAiCellState(recordId, prop.id);
+  const wrap = document.createElement('div');
+  wrap.className = `ai-cell-wrap${state?.status === 'loading' ? ' is-loading' : ''}${state?.status === 'error' ? ' is-error' : ''}`;
+
+  const content = document.createElement('div');
+  content.className = 'ai-cell-content';
+  content.appendChild(control);
+  wrap.appendChild(content);
+
+  const actionRow = document.createElement('div');
+  actionRow.className = 'ai-cell-actions';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `ai-cell-trigger${state?.status === 'error' ? ' is-error' : ''}`;
+  button.innerHTML = icon('star');
+  button.disabled = state?.status === 'loading';
+  button.title = state?.status === 'loading'
+    ? tr('Procesando con IA…', 'Processing with AI...')
+    : (state?.status === 'error' ? (state.message || tr('Reintentar con IA', 'Retry with AI')) : tr('Completar con IA', 'Fill with AI'));
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', async event => {
+    event.stopPropagation();
+    await runAiForCell(recordId, prop, { overwrite: true });
+  });
+  actionRow.appendChild(button);
+
+  if (state?.status === 'loading' || state?.status === 'error' || state?.status === 'success') {
+    const label = document.createElement('span');
+    label.className = `count ai-cell-status${state?.status === 'error' ? ' is-error' : ''}`;
+    label.textContent = state.status === 'loading'
+      ? tr('Procesando…', 'Processing...')
+      : (state.status === 'error' ? tr('Error IA', 'AI error') : tr('Listo', 'Done'));
+    if (state?.message) label.title = state.message;
+    actionRow.appendChild(label);
+  }
+
+  wrap.appendChild(actionRow);
+  return wrap;
 }
 
 function renderInlineCellInput({ prop, value, recordId, record = null, attachments = [], isDraft, onCommit }) {
@@ -3100,7 +3549,7 @@ function renderInlineCellInput({ prop, value, recordId, record = null, attachmen
       if (dropped.length) await processFiles(dropped);
     });
 
-    return wrap;
+    return wrapAiCellControl({ prop, recordId, isDraft, control: wrap });
   }
 
   if (prop.type === 'checkbox') {
@@ -3113,7 +3562,7 @@ function renderInlineCellInput({ prop, value, recordId, record = null, attachmen
       if (isDraft && !hasMeaningfulValue(prop, normalized)) return;
       await onCommit(normalized);
     });
-    return input;
+    return wrapAiCellControl({ prop, recordId, isDraft, control: input });
   }
 
   if (prop.type === 'url') {
@@ -3192,7 +3641,7 @@ function renderInlineCellInput({ prop, value, recordId, record = null, attachmen
       }
     });
 
-    return wrap;
+    return wrapAiCellControl({ prop, recordId, isDraft, control: wrap });
   }
 
   const input = document.createElement('input');
@@ -3261,7 +3710,7 @@ function renderInlineCellInput({ prop, value, recordId, record = null, attachmen
       }
     });
 
-    return box;
+    return wrapAiCellControl({ prop, recordId, isDraft, control: box });
   }
 
   input.value = value === null || value === undefined ? '' : String(value);
@@ -3279,7 +3728,7 @@ function renderInlineCellInput({ prop, value, recordId, record = null, attachmen
     }
   });
 
-  return input;
+  return wrapAiCellControl({ prop, recordId, isDraft, control: input });
 }
 
 async function persistPropertyConfig(prop, config) {
@@ -3653,11 +4102,15 @@ function cellHeader(label, prop) {
   th.textContent = label;
 
   if (prop) {
+    const aiRun = STATE.aiColumnRuns[prop.id] || null;
+    const aiBadge = isAiProperty(prop)
+      ? `<span class="header-cell-badge${aiRun ? ' is-running' : ''}">${escapeHtml(aiRun ? `${aiRun.completed}/${aiRun.total}` : tr('IA', 'AI'))}</span>`
+      : '';
     th.classList.add('header-cell-prop');
     th.setAttribute('data-property-id', String(prop.id));
     th.innerHTML = `
       <span class="header-cell-content">
-        <span class="header-cell-label">${escapeHtml(label)}</span>
+        <span class="header-cell-label-wrap"><span class="header-cell-label">${escapeHtml(label)}</span>${aiBadge}</span>
         <button type="button" class="header-cell-menu-btn" aria-label="${escapeHtml(tr('Abrir menú de propiedad', 'Open property menu'))}" title="${escapeHtml(tr('Menú', 'Menu'))}">
           <span class="header-cell-menu-dots" aria-hidden="true">⋮</span>
         </button>
@@ -3702,9 +4155,23 @@ function openPropertyHeaderMenu(prop, anchorEl) {
   menu.className = 'property-menu';
 
   const isSystem = prop.type === 'autoId' || prop.key === 'id';
+  const isAi = isAiProperty(prop);
+  const canConvertToAi = !isSystem && supportsAiPropertyType(prop.type) && !isAi;
+  const convertToAiDisabledReason = isSystem
+    ? tr('Las propiedades del sistema no se pueden convertir a IA.', 'System properties cannot be converted to AI.')
+    : tr('Solo texto, selección, URL, booleano, fecha y hora pueden convertirse a IA.', 'Only text, selection, URL, boolean, date, and time can be converted to AI.');
   const items = [
     { key: 'edit', label: tr('Editar propiedad', 'Edit property'), iconName: 'edit' },
     { key: 'changeType', label: tr('Cambiar tipo de propiedad', 'Change property type'), iconName: 'swap', disabled: isSystem },
+    ...(isAi
+      ? [
+          { key: 'autofillEmpty', label: tr('Autocompletar vacías', 'Autofill empty'), iconName: 'star' },
+          { key: 'autofillAll', label: tr('Autocompletar todas', 'Autofill all'), iconName: 'star' },
+          { key: 'revertAi', label: tr('Desconvertir Propiedad IA', 'Revert AI property'), iconName: 'swap' },
+        ]
+      : [
+          { key: 'convertAi', label: tr('Convertir a Propiedad IA', 'Convert to AI property'), iconName: 'star', disabled: !canConvertToAi, title: canConvertToAi ? '' : convertToAiDisabledReason },
+        ]),
     { key: 'filter', label: tr('Filtrar', 'Filter'), iconName: 'filter' },
     { key: 'sort', label: tr('Ordenar', 'Sort'), iconName: 'sort' },
     { key: 'hide', label: tr('Ocultar', 'Hide'), iconName: 'hide', disabled: isSystem },
@@ -3719,11 +4186,16 @@ function openPropertyHeaderMenu(prop, anchorEl) {
     btn.className = `property-menu-item${item.danger ? ' is-danger' : ''}`;
     btn.innerHTML = `${icon(item.iconName)}<span>${escapeHtml(item.label)}</span>`;
     btn.disabled = Boolean(item.disabled);
+    if (item.title || item.label) btn.title = item.title || item.label;
     btn.addEventListener('click', async (event) => {
       event.stopPropagation();
       closePropertyHeaderMenu();
       if (item.key === 'edit') await openEditPropertyModal(prop);
       if (item.key === 'changeType') await openChangePropertyTypeModal(prop);
+      if (item.key === 'convertAi') await openEditPropertyModal(prop, { forceAi: true });
+      if (item.key === 'revertAi') await revertAiProperty(prop);
+      if (item.key === 'autofillEmpty') await runAiAutofillForProperty(prop, false);
+      if (item.key === 'autofillAll') await runAiAutofillForProperty(prop, true);
       if (item.key === 'filter') openAdvancedCriteriaModal({ focus: 'filter', presetPropertyId: prop.id });
       if (item.key === 'sort') openAdvancedCriteriaModal({ focus: 'sort', presetPropertyId: prop.id });
       if (item.key === 'hide') await hideProperty(prop);
@@ -4619,8 +5091,12 @@ function openAdvancedCriteriaModal({ focus = 'filter', presetPropertyId = null }
   });
 }
 
-async function openEditPropertyModal(prop) {
+async function openEditPropertyModal(prop, options = {}) {
   if (!prop) return;
+  const forceAi = options.forceAi === true;
+  const canEnableAi = supportsAiPropertyType(prop.type);
+  const aiEnabled = forceAi || isAiProperty(prop);
+  const aiConfig = aiConfigForProperty(prop);
 
   const currentOptionSort = normalizeOptionSortMode(prop.config?.optionSort || 'manual');
   const optionSortLabel = currentOptionSort === 'asc'
@@ -4664,6 +5140,8 @@ async function openEditPropertyModal(prop) {
         <label>${escapeHtml(tr('Nombre', 'Name'))}<input id="editPropertyName" value="${escapeHtml(prop.name)}" /></label>
         <label class="checkbox-row"><input type="checkbox" id="editPropertyVisible" ${prop.is_visible ? 'checked' : ''}/> ${escapeHtml(tr('Visible en tabla/galería', 'Visible in table/gallery'))}</label>
       </div>
+      ${canEnableAi ? `<label class="checkbox-row"><input type="checkbox" id="editPropertyAiEnabled" ${aiEnabled ? 'checked' : ''}/> ${escapeHtml(tr('Activar Propiedad IA', 'Enable AI property'))}</label>` : ''}
+      ${canEnableAi ? `<div id="editPropertyAiConfig" class="${aiEnabled ? '' : 'hidden'}"><h4>${escapeHtml(tr('Configuración IA', 'AI configuration'))}</h4>${renderAiConfigFields({ prefix: 'editProperty', baseType: prop.type, aiConfig, excludePropertyId: prop.id })}</div>` : ''}
       <div id="editPropertySelectConfig" class="${(prop.type === 'singleSelect' || prop.type === 'multiSelect') ? '' : 'hidden'}">
         <div class="select-config-head">
           <h4>${escapeHtml(tr('Opciones de etiqueta y color', 'Tag and color options'))}</h4>
@@ -4698,17 +5176,18 @@ async function openEditPropertyModal(prop) {
       if (!name) return true;
       const isVisible = document.getElementById('editPropertyVisible').checked;
       const body = { name, isVisible };
+      let nextConfig = { ...(prop.config || {}) };
       if (prop.type === 'singleSelect' || prop.type === 'multiSelect') {
-        body.config = {
-          ...(prop.config || {}),
+        nextConfig = {
+          ...nextConfig,
           options: collectOptions('editProperty'),
           optionSort: normalizeOptionSortMode(modal.dataset.optionSort || prop.config?.optionSort || 'manual'),
         };
       }
       if (prop.type === 'relation') {
         const relatedDatabaseId = Number(document.getElementById('editRelatedDatabase').value || 0) || null;
-        body.config = {
-          ...(prop.config || {}),
+        nextConfig = {
+          ...nextConfig,
           relatedDatabaseId,
           relatedDatabaseIds: relatedDatabaseId ? [relatedDatabaseId] : [],
           showOnRelatedDatabase: document.getElementById('editRelationTwoWay').checked,
@@ -4716,13 +5195,35 @@ async function openEditPropertyModal(prop) {
         };
       }
       if (prop.type === 'rollup') {
-        body.config = {
-          ...(prop.config || {}),
+        nextConfig = {
+          ...nextConfig,
           relationPropertyId: Number(document.getElementById('editRollupRelationProperty').value || 0) || null,
           relatedPropertyId: Number(document.getElementById('editRollupRelatedProperty').value || 0) || null,
           calculate: document.getElementById('editRollupCalculate').value || 'showOriginal',
         };
       }
+      if (canEnableAi) {
+        const aiToggle = document.getElementById('editPropertyAiEnabled');
+        if (aiToggle?.checked) {
+          const nextAiConfig = collectAiConfigFromForm('editProperty', prop.type, prop);
+          try {
+            if (!nextAiConfig.systemPrompt) throw new Error(tr('La propiedad IA necesita un prompt del sistema.', 'The AI property needs a system prompt.'));
+            if (!nextAiConfig.contextPropertyIds.length) throw new Error(tr('La propiedad IA necesita al menos una propiedad de contexto.', 'The AI property needs at least one context property.'));
+            if (!nextAiConfig.provider) throw new Error(tr('Selecciona un proveedor IA.', 'Select an AI provider.'));
+            if (!nextAiConfig.model) throw new Error(tr('Selecciona un modelo IA.', 'Select an AI model.'));
+          } catch (error) {
+            openConfirmMini({ message: error.message, confirmText: 'OK' });
+            return true;
+          }
+          nextConfig = {
+            ...nextConfig,
+            ai: nextAiConfig,
+          };
+        } else {
+          nextConfig = stripAiConfig(nextConfig);
+        }
+      }
+      body.config = nextConfig;
       await api(`/api/properties/${prop.id}`, { method: 'PUT', body });
       await reloadSelectedDatabase();
       return false;
@@ -4752,6 +5253,15 @@ async function openEditPropertyModal(prop) {
 
     editRollupRelationProperty.addEventListener('change', refreshEditRollupRelated);
     await refreshEditRollupRelated();
+  }
+
+  if (canEnableAi) {
+    const aiToggle = document.getElementById('editPropertyAiEnabled');
+    const aiConfigWrap = document.getElementById('editPropertyAiConfig');
+    aiToggle?.addEventListener('change', () => {
+      aiConfigWrap?.classList.toggle('hidden', !aiToggle.checked);
+    });
+    bindAiConfigControls('editProperty', () => prop.type, aiConfig.model);
   }
 
   if (prop.type === 'singleSelect' || prop.type === 'multiSelect') {
@@ -4808,6 +5318,8 @@ async function openEditPropertyModal(prop) {
 
 async function openChangePropertyTypeModal(prop) {
   if (!prop) return;
+  const keepAi = isAiProperty(prop);
+  const availableTypes = keepAi ? compatibleAiOutputTypes() : PROPERTY_TYPES;
 
   openModal({
     title: `${tr('Cambiar tipo', 'Change type')}: ${prop.name}`,
@@ -4815,17 +5327,28 @@ async function openChangePropertyTypeModal(prop) {
     content: `
       <label>${escapeHtml(tr('Nuevo tipo', 'New type'))}
         <select id="changePropertyType">
-          ${PROPERTY_TYPES.map(item => `<option value="${item.value}" ${item.value === prop.type ? 'selected' : ''}>${escapeHtml(typeLabel(item))}</option>`).join('')}
+          ${availableTypes.map(item => `<option value="${item.value}" ${item.value === prop.type ? 'selected' : ''}>${escapeHtml(typeLabel(item))}</option>`).join('')}
         </select>
       </label>
     `,
     onSubmit: async () => {
       const type = document.getElementById('changePropertyType').value;
-      const config = (type === prop.type)
+      let config = (type === prop.type)
         ? (prop.config || {})
         : (type === 'singleSelect' || type === 'multiSelect')
           ? { options: prop.config?.options || [] }
           : {};
+      if (keepAi) {
+        config = {
+          ...config,
+          ai: {
+            ...aiConfigForProperty(prop),
+            enabled: true,
+            originalType: prop.config?.ai?.originalType || prop.type,
+            responseType: type,
+          },
+        };
+      }
       await api(`/api/properties/${prop.id}`, { method: 'PUT', body: { type, config } });
       await reloadSelectedDatabase();
       return false;
@@ -5013,6 +5536,54 @@ function applyLanguage() {
   }
 }
 
+function buildAiProviderBlocks() {
+  const providers = Object.entries(AI_PROVIDER_INFO);
+  const currentAiSettings = STATE.appSettings?.ai || {};
+  const activeProvider = currentAiSettings.activeProvider || null;
+
+  return providers.map(([providerId, info]) => {
+    const providerConfig = currentAiSettings.providers?.[providerId] || {};
+    const isConfigured = providerConfig.isConfigured || false;
+    const currentModel = providerConfig.model || '';
+    const isActive = activeProvider === providerId;
+
+    return `
+      <div class="ai-provider-block" data-provider="${escapeHtml(providerId)}">
+        <div class="ai-provider-header">
+          <div class="ai-provider-header-info">
+            <strong>${escapeHtml(info.name)}</strong>
+            ${isConfigured ? `<span class="ai-badge ai-badge-configured">${escapeHtml(tr('Configurado', 'Configured'))}</span>` : `<span class="ai-badge ai-badge-pending">${escapeHtml(tr('Sin clave', 'No key'))}</span>`}
+            ${isActive ? `<span class="ai-badge ai-badge-active">${escapeHtml(tr('Activo', 'Active'))}</span>` : ''}
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" class="ai-provider-toggle" data-provider="${escapeHtml(providerId)}" ${isActive ? 'checked' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="ai-provider-body">
+          <div class="ai-provider-key-row">
+            <div class="ai-key-input-wrap">
+              <input type="password" class="ai-api-key" data-provider="${escapeHtml(providerId)}" placeholder="${escapeHtml(info.keyPlaceholder)}" autocomplete="off" />
+              <button type="button" class="btn-icon ai-toggle-password" data-provider="${escapeHtml(providerId)}" title="${escapeHtml(tr('Mostrar/ocultar', 'Show/hide'))}">${escapeHtml(tr('Ver', 'Show'))}</button>
+            </div>
+            <div class="ai-key-actions">
+              <button class="btn" type="button" data-action="save-ai-key" data-provider="${escapeHtml(providerId)}">${escapeHtml(isConfigured ? tr('Actualizar clave', 'Update key') : tr('Guardar y validar', 'Save & validate'))}</button>
+              ${isConfigured ? `<button class="btn btn-danger" type="button" data-action="delete-ai-key" data-provider="${escapeHtml(providerId)}">${escapeHtml(tr('Eliminar clave', 'Delete key'))}</button>` : ''}
+            </div>
+          </div>
+          <label class="ai-model-label">
+            ${escapeHtml(tr('Modelo', 'Model'))}
+            <select class="ai-model-select" data-provider="${escapeHtml(providerId)}" ${!isConfigured ? 'disabled' : ''}>
+              ${currentModel ? `<option value="${escapeHtml(currentModel)}" selected>${escapeHtml(currentModel)}</option>` : `<option value="">${escapeHtml(isConfigured ? tr('Cargar modelos...', 'Load models...') : tr('Configura la API Key primero', 'Configure API Key first'))}</option>`}
+            </select>
+          </label>
+          <div class="ai-provider-status" data-provider="${escapeHtml(providerId)}"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 function openAppSettingsModal() {
   const currentLanguage = STATE.appSettings?.ui?.language === 'es' ? 'es' : (STATE.language === 'es' ? 'es' : 'en');
 
@@ -5047,15 +5618,16 @@ function openAppSettingsModal() {
         <button class="view-tab active" type="button" data-tab="general">${escapeHtml(t('generalTab'))}</button>
         <button class="view-tab" type="button" data-tab="interface">${escapeHtml(t('interfaceTab'))}</button>
         <button class="view-tab" type="button" data-tab="integrations">${escapeHtml(integrationTabLabel)}</button>
+        <button class="view-tab" type="button" data-tab="ai-providers">${escapeHtml(tr('Integraciones IA', 'AI Integrations'))}</button>
         <button class="view-tab" type="button" data-tab="backup">${escapeHtml(t('backupTab'))}</button>
         <button class="view-tab" type="button" data-tab="danger">${escapeHtml(t('dangerTab'))}</button>
       </div>
 
-      <div id="settingsTabGeneral" class="modal-body">
+      <div id="settingsTabGeneral" class="modal-body" style="overflow-y:visible;max-height:none;">
         <p class="count">${escapeHtml(STATE.language === 'en' ? 'General options will be expanded soon.' : 'Las opciones generales se ampliarán próximamente.')}</p>
       </div>
 
-      <div id="settingsTabInterface" class="modal-body hidden">
+      <div id="settingsTabInterface" class="modal-body hidden" style="overflow-y:visible;max-height:none;">
         <label>${escapeHtml(t('languageLabel'))}
           <select id="settingsLanguage">
             <option value="es" ${currentLanguage === 'es' ? 'selected' : ''}>${escapeHtml(t('languageSpanish'))}</option>
@@ -5064,7 +5636,7 @@ function openAppSettingsModal() {
         </label>
       </div>
 
-      <div id="settingsTabIntegrations" class="modal-body hidden" style="display:grid;gap:10px;">
+      <div id="settingsTabIntegrations" class="modal-body hidden" style="display:grid;gap:10px;overflow-y:visible;max-height:none;">
         <p class="count">${escapeHtml(integrationInfoText)}</p>
         <p class="count">${escapeHtml(integrationUseCases)}</p>
         <div class="columns-2">
@@ -5106,7 +5678,12 @@ function openAppSettingsModal() {
         </div>
       </div>
 
-      <div id="settingsTabBackup" class="modal-body hidden" style="display:grid;gap:12px;">
+      <div id="settingsTabAiProviders" class="modal-body hidden" style="display:grid;gap:18px;overflow-y:visible;max-height:none;">
+        <p class="count">${escapeHtml(tr('Configura las claves API de los proveedores de IA. Solo un proveedor puede estar activo a la vez.', 'Configure API keys for AI providers. Only one provider can be active at a time.'))}</p>
+        ${buildAiProviderBlocks()}
+      </div>
+
+      <div id="settingsTabBackup" class="modal-body hidden" style="display:grid;gap:12px;overflow-y:visible;max-height:none;">
         <p class="count">${escapeHtml(t('portfolioBackupInfo'))}</p>
         <button class="btn" type="button" id="btnDownloadFullBackup">${escapeHtml(t('downloadFullBackup'))}</button>
         <hr style="border:none;border-top:1px solid var(--border);" />
@@ -5115,7 +5692,7 @@ function openAppSettingsModal() {
         <button class="btn btn-danger" type="button" id="btnRestoreFullBackup">${escapeHtml(t('restoreFullBackup'))}</button>
       </div>
 
-      <div id="settingsTabDanger" class="modal-body hidden">
+      <div id="settingsTabDanger" class="modal-body hidden" style="overflow-y:visible;max-height:none;">
         <div class="danger-zone-panel">
           <strong>${escapeHtml(t('dangerZoneTitle'))}</strong>
           <p class="count">${escapeHtml(t('dangerZoneDescription'))}</p>
@@ -5142,6 +5719,7 @@ function openAppSettingsModal() {
   const general = document.getElementById('settingsTabGeneral');
   const iface = document.getElementById('settingsTabInterface');
   const integrations = document.getElementById('settingsTabIntegrations');
+  const aiProviders = document.getElementById('settingsTabAiProviders');
   const backup = document.getElementById('settingsTabBackup');
   const danger = document.getElementById('settingsTabDanger');
 
@@ -5508,8 +6086,236 @@ function openAppSettingsModal() {
       general.classList.toggle('hidden', target !== 'general');
       iface.classList.toggle('hidden', target !== 'interface');
       integrations.classList.toggle('hidden', target !== 'integrations');
+      aiProviders.classList.toggle('hidden', target !== 'ai-providers');
       backup.classList.toggle('hidden', target !== 'backup');
       danger.classList.toggle('hidden', target !== 'danger');
+    });
+  });
+
+  bindAiProviderEvents();
+}
+
+function bindAiProviderEvents() {
+  async function refreshAiProviderTab() {
+    try {
+      const freshSettings = await api('/api/settings');
+      STATE.appSettings = freshSettings;
+      const aiProvidersTab = document.getElementById('settingsTabAiProviders');
+      if (aiProvidersTab) {
+        aiProvidersTab.innerHTML = `
+          <p class="count">${escapeHtml(tr('Configura las claves API de los proveedores de IA. Solo un proveedor puede estar activo a la vez.', 'Configure API keys for AI providers. Only one provider can be active at a time.'))}</p>
+          ${buildAiProviderBlocks()}
+        `;
+        bindAiProviderEvents();
+      }
+    } catch (error) {
+      console.error('Error refreshing AI provider tab', error);
+    }
+  }
+
+  async function loadModelsForProvider(providerId) {
+    const select = document.querySelector(`.ai-model-select[data-provider="${providerId}"]`);
+    const statusEl = document.querySelector(`.ai-provider-status[data-provider="${providerId}"]`);
+    if (!select) return;
+
+    select.disabled = true;
+    select.innerHTML = `<option value="">${escapeHtml(tr('Cargando modelos...', 'Loading models...'))}</option>`;
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="ai-status-loading">${escapeHtml(tr('Cargando modelos...', 'Loading models...'))}</span>`;
+      statusEl.className = 'ai-provider-status';
+    }
+
+    try {
+      const result = await api(`/api/settings/ai-provider/${encodeURIComponent(providerId)}/models`);
+      const models = result.models || [];
+      const providerConfig = STATE.appSettings?.ai?.providers?.[providerId] || {};
+      const currentModel = providerConfig.model || '';
+
+      if (models.length === 0) {
+        select.innerHTML = `<option value="">${escapeHtml(tr('No se encontraron modelos', 'No models found'))}</option>`;
+      } else {
+        select.innerHTML = models.map(model =>
+          `<option value="${escapeHtml(model)}" ${model === currentModel ? 'selected' : ''}>${escapeHtml(model)}</option>`
+        ).join('');
+      }
+
+      if (statusEl) {
+        statusEl.innerHTML = models.length > 0
+          ? `<span class="ai-status-success">${escapeHtml(tr('Modelos cargados correctamente', 'Models loaded successfully'))} (${models.length})</span>`
+          : '';
+      }
+    } catch (error) {
+      select.innerHTML = `<option value="">${escapeHtml(tr('Error al cargar modelos', 'Error loading models'))}</option>`;
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="ai-status-error">${escapeHtml(error.message)}</span>`;
+        statusEl.className = 'ai-provider-status ai-status-error';
+      }
+    } finally {
+      select.disabled = false;
+    }
+  }
+
+  async function saveAiKey(providerId) {
+    const input = document.querySelector(`.ai-api-key[data-provider="${providerId}"]`);
+    const saveBtn = document.querySelector(`[data-action="save-ai-key"][data-provider="${providerId}"]`);
+    const statusEl = document.querySelector(`.ai-provider-status[data-provider="${providerId}"]`);
+    if (!input || !saveBtn) return;
+
+    const apiKey = input.value.trim();
+    if (!apiKey) {
+      showToast(tr('Introduce una API Key', 'Please enter an API Key'), 'warning');
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.classList.add('is-loading');
+    const prevText = saveBtn.textContent;
+    saveBtn.textContent = tr('Guardando...', 'Saving...');
+
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="ai-status-loading">${escapeHtml(tr('Validando API Key...', 'Validating API Key...'))}</span>`;
+      statusEl.className = 'ai-provider-status';
+    }
+
+    try {
+      await api('/api/settings/ai-provider', {
+        method: 'POST',
+        body: { provider: providerId, apiKey },
+      });
+
+      input.value = '';
+      await refreshAiProviderTab();
+
+      const providerConfig = STATE.appSettings?.ai?.providers?.[providerId] || {};
+      if (providerConfig.isConfigured) {
+        await loadModelsForProvider(providerId);
+        showToast(tr('API Key guardada correctamente', 'API Key saved successfully'), 'success');
+      }
+    } catch (error) {
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="ai-status-error">${escapeHtml(error.message)}</span>`;
+        statusEl.className = 'ai-provider-status ai-status-error';
+      }
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.classList.remove('is-loading');
+      saveBtn.textContent = prevText;
+    }
+  }
+
+  async function deleteAiKey(providerId) {
+    const deleteBtn = document.querySelector(`[data-action="delete-ai-key"][data-provider="${providerId}"]`);
+    if (!deleteBtn) return;
+
+    openConfirmMini({
+      message: tr('¿Eliminar la API Key de este proveedor?', 'Delete this provider API Key?'),
+      confirmText: tr('Eliminar', 'Delete'),
+      danger: true,
+      onConfirm: async () => {
+        deleteBtn.disabled = true;
+        deleteBtn.classList.add('is-loading');
+
+        try {
+          await api(`/api/settings/ai-provider/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
+          await refreshAiProviderTab();
+          showToast(tr('API Key eliminada', 'API Key deleted'), 'success');
+        } catch (error) {
+          showToast(error.message, 'error');
+        } finally {
+          deleteBtn.disabled = false;
+          deleteBtn.classList.remove('is-loading');
+        }
+      },
+    });
+  }
+
+  async function toggleProvider(providerId, checked) {
+    const toggle = document.querySelector(`.ai-provider-toggle[data-provider="${providerId}"]`);
+    if (!toggle) return;
+
+    toggle.disabled = true;
+
+    try {
+      await api('/api/settings/ai-provider', {
+        method: 'POST',
+        body: { provider: providerId, setActive: true, active: checked },
+      });
+      await refreshAiProviderTab();
+    } catch (error) {
+      showToast(error.message, 'error');
+    } finally {
+      toggle.disabled = false;
+    }
+  }
+
+  async function onModelSelectChange(providerId, model) {
+    if (!model) return;
+    try {
+      await api('/api/settings/ai-provider', {
+        method: 'POST',
+        body: { provider: providerId, model },
+      });
+      STATE.appSettings = await api('/api/settings');
+      showToast(tr('Modelo guardado', 'Model saved'), 'success');
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  }
+
+  [...document.querySelectorAll('.ai-provider-toggle')].forEach(toggle => {
+    toggle.addEventListener('change', async (event) => {
+      const providerId = event.target.getAttribute('data-provider');
+      toggleProvider(providerId, event.target.checked);
+    });
+  });
+
+  [...document.querySelectorAll('[data-action="save-ai-key"]')].forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = btn.getAttribute('data-provider');
+      saveAiKey(providerId);
+    });
+  });
+
+  [...document.querySelectorAll('[data-action="delete-ai-key"]')].forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = btn.getAttribute('data-provider');
+      deleteAiKey(providerId);
+    });
+  });
+
+  [...document.querySelectorAll('.ai-toggle-password')].forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = btn.getAttribute('data-provider');
+      const input = document.querySelector(`.ai-api-key[data-provider="${providerId}"]`);
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      btn.textContent = isPassword ? tr('Ocultar', 'Hide') : tr('Ver', 'Show');
+    });
+  });
+
+  [...document.querySelectorAll('.ai-model-select')].forEach(select => {
+    select.addEventListener('change', () => {
+      const providerId = select.getAttribute('data-provider');
+      onModelSelectChange(providerId, select.value);
+    });
+
+    select.addEventListener('focus', () => {
+      const providerId = select.getAttribute('data-provider');
+      const providerConfig = STATE.appSettings?.ai?.providers?.[providerId] || {};
+      if (providerConfig.isConfigured && select.options.length <= 1) {
+        loadModelsForProvider(providerId);
+      }
+    });
+  });
+
+  [...document.querySelectorAll('.ai-api-key')].forEach(input => {
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const providerId = input.getAttribute('data-provider');
+        saveAiKey(providerId);
+      }
     });
   });
 }
@@ -6471,6 +7277,8 @@ function collectOptions(prefix = 'option') {
 function openCreatePropertyModal() {
   if (!STATE.selectedDatabase) return;
 
+  const createTypeItems = [...PROPERTY_TYPES, AI_PROPERTY_TYPE];
+  const defaultAiOutputType = compatibleAiOutputTypes()[0]?.value || 'text';
   const dbOptions = STATE.databases.map(db => `<option value="${db.id}">${escapeHtml(db.name)}</option>`).join('');
   const relationPropertyOptions = STATE.selectedDatabase.properties
     .filter(prop => prop.type === 'relation')
@@ -6492,9 +7300,19 @@ function openCreatePropertyModal() {
     content: `
       <div class="columns-2">
         <label>${escapeHtml(tr('Nombre', 'Name'))}<input id="propertyName" /></label>
-        <label>${escapeHtml(tr('Tipo', 'Type'))}<select id="propertyType">${PROPERTY_TYPES.map(p => `<option value="${p.value}">${escapeHtml(typeLabel(p))}</option>`).join('')}</select></label>
+        <label>${escapeHtml(tr('Tipo', 'Type'))}<select id="propertyType">${createTypeItems.map(p => `<option value="${p.value}">${escapeHtml(typeLabel(p))}</option>`).join('')}</select></label>
       </div>
       <label class="checkbox-row"><input type="checkbox" id="propertyVisible" checked /> ${escapeHtml(tr('Visible en tabla/galería', 'Visible in table/gallery'))}</label>
+
+      <div id="aiConfig" class="hidden">
+        <div class="columns-2">
+          <label>${escapeHtml(tr('Tipo de respuesta esperada', 'Expected response type'))}
+            <select id="propertyAiOutputType">${buildPropertyTypeOptions(compatibleAiOutputTypes(), defaultAiOutputType)}</select>
+          </label>
+          <div class="count ai-property-type-hint">${escapeHtml(tr('La IA escribirá el resultado usando este formato.', 'The AI will write the result using this output format.'))}</div>
+        </div>
+        ${renderAiConfigFields({ prefix: 'property', baseType: defaultAiOutputType, aiConfig: aiConfigForProperty({ type: defaultAiOutputType, config: {} }) })}
+      </div>
 
       <div id="selectConfig" class="hidden">
         <h4>${escapeHtml(tr('Opciones de etiqueta y color', 'Tag and color options'))}</h4>
@@ -6525,6 +7343,9 @@ function openCreatePropertyModal() {
       const name = document.getElementById('propertyName').value.trim();
       const type = document.getElementById('propertyType').value;
       const isVisible = document.getElementById('propertyVisible').checked;
+      const actualType = type === 'ai'
+        ? (document.getElementById('propertyAiOutputType').value || defaultAiOutputType)
+        : type;
 
       if (!name) {
         openConfirmMini({
@@ -6536,7 +7357,7 @@ function openCreatePropertyModal() {
       }
 
       const config = {};
-      if (type === 'singleSelect' || type === 'multiSelect') {
+      if (actualType === 'singleSelect' || actualType === 'multiSelect') {
         config.options = collectOptions('property');
       }
 
@@ -6554,9 +7375,23 @@ function openCreatePropertyModal() {
         config.calculate = document.getElementById('rollupCalculate').value || 'showOriginal';
       }
 
+      if (type === 'ai') {
+        const aiConfig = collectAiConfigFromForm('property', actualType);
+        try {
+          if (!aiConfig.systemPrompt) throw new Error(tr('La propiedad IA necesita un prompt del sistema.', 'The AI property needs a system prompt.'));
+          if (!aiConfig.contextPropertyIds.length) throw new Error(tr('La propiedad IA necesita al menos una propiedad de contexto.', 'The AI property needs at least one context property.'));
+          if (!aiConfig.provider) throw new Error(tr('Selecciona un proveedor IA.', 'Select an AI provider.'));
+          if (!aiConfig.model) throw new Error(tr('Selecciona un modelo IA.', 'Select an AI model.'));
+        } catch (error) {
+          openConfirmMini({ message: error.message, confirmText: 'OK' });
+          return true;
+        }
+        config.ai = aiConfig;
+      }
+
       await api(`/api/databases/${STATE.selectedDatabaseId}/properties`, {
         method: 'POST',
-        body: { name, type, isVisible, config },
+        body: { name, type: actualType, isVisible, config },
       });
 
       STATE.selectedDatabase = await api(`/api/databases/${STATE.selectedDatabaseId}`);
@@ -6569,6 +7404,8 @@ function openCreatePropertyModal() {
   mountOptionsEditor('property', []);
 
   const typeSelect = document.getElementById('propertyType');
+  const aiConfig = document.getElementById('aiConfig');
+  const aiOutputType = document.getElementById('propertyAiOutputType');
   const selectConfig = document.getElementById('selectConfig');
   const relationConfig = document.getElementById('relationConfig');
   const rollupConfig = document.getElementById('rollupConfig');
@@ -6593,13 +7430,21 @@ function openCreatePropertyModal() {
 
   function refreshTypeConfig() {
     const type = typeSelect.value;
-    selectConfig.classList.toggle('hidden', !(type === 'singleSelect' || type === 'multiSelect'));
+    const baseType = type === 'ai' ? aiOutputType.value : type;
+    selectConfig.classList.toggle('hidden', !(baseType === 'singleSelect' || baseType === 'multiSelect'));
     relationConfig.classList.toggle('hidden', type !== 'relation');
     rollupConfig.classList.toggle('hidden', type !== 'rollup');
+    aiConfig.classList.toggle('hidden', type !== 'ai');
+    refreshAiSelectModeVisibility('property', baseType);
   }
 
   typeSelect.addEventListener('change', refreshTypeConfig);
+  aiOutputType.addEventListener('change', () => {
+    refreshTypeConfig();
+    bindAiConfigControls('property', () => aiOutputType.value);
+  });
   rollupRelationProperty.addEventListener('change', refreshRollupRelatedProperties);
+  bindAiConfigControls('property', () => aiOutputType.value);
   refreshTypeConfig();
   refreshRollupRelatedProperties();
 }

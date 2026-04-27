@@ -54,6 +54,7 @@ The short demo above cycles through the main workspace, a database view, and glo
 ## Core capabilities
 
 - Dynamic database creation with custom properties.
+- AI properties that enrich rows from other fields, documents, and images with per-cell or per-column generation flows.
 - Database templates for photo archives, bibliography, inventory, CRM, projects, and research datasets.
 - Table, gallery, and analytics views over the same dataset.
 - Persistent advanced filters with grouped `AND/OR`, date ranges, empty/non-empty checks, relation-aware filtering, multi-sort, and grouping.
@@ -182,6 +183,7 @@ npm test
 
 Current automated coverage includes:
 
+- AI property validation, provider model lookup, autofill persistence, select option creation, and audit logging
 - relations and rollups
 - templates, grouped filters, analytics, and multi-attachment uploads
 - API key scopes and expiry

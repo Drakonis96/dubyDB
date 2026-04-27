@@ -21,6 +21,10 @@ data/**
 app/data/**
 
 # Keep empty runtime folders in repo
+!data/uploads/
+!data/tmp_restore/
+!app/data/uploads/
+!app/data/tmp_restore/
 !data/.gitkeep
 !data/uploads/.gitkeep
 !data/tmp_restore/.gitkeep
